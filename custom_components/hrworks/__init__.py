@@ -27,9 +27,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HrworksConfigEntry) -> b
     # Home Assistant's startup waits for every integration's setup, so fetch it
     # in the background; entities stay unavailable until it completes. Auth
     # failures still start the reauth flow from the coordinator.
-    entry.async_create_background_task(
-        hass, coordinator.async_refresh(), f"{DOMAIN} first refresh"
-    )
+    entry.async_create_background_task(hass, coordinator.async_refresh(), f"{DOMAIN} first refresh")
     return True
 
 
