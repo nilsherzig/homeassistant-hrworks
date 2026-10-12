@@ -182,6 +182,22 @@ class EmployeePortal:
             await self.context.close()
         self.context = self.page = None
 
+    @property
+    def mfa_pending(self) -> bool:
+        """An unfinished TOTP login lives only in its open page."""
+        started = self.mfa_started
+        return started is not None and datetime.now(BERLIN) - started <= timedelta(minutes=10)
+
+    async def release(self) -> None:
+        """Keep refreshed cookies of an authenticated page, then drop the context."""
+        if (
+            self.page is not None
+            and not self.page.is_closed()
+            and urlsplit(self.page.url).path.startswith("/o/")
+        ):
+            await self.save_session()
+        await self.close()
+
     async def settle(self) -> None:
         """Wait for the portal's event queue and lazy render to become stable."""
         page = await self.open()

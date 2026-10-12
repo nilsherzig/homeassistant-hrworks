@@ -32,6 +32,9 @@ command pattern as our Monero Pool integration. Requests and responses travel th
 SSH stdin/stdout. Playwright and its driver run on the browser host; HA installs only
 AsyncSSH. The worker creates isolated Chromium contexts and saves each employee's
 cookies in a private state directory. It disconnects without closing other browser tabs.
+After a minute without requests the worker saves the cookies and disconnects from the
+browser, so a per-connection browser (such as browser-daemon) ends its session between
+polls; the next request reconnects. A pending TOTP login keeps its browser open.
 
 ## Declarative installation on NixOS
 

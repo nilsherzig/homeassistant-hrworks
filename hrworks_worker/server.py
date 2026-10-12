@@ -21,6 +21,14 @@ from .portal import BERLIN, EmployeePortal, PortalError, profile_id
 
 LOGGER = logging.getLogger(__name__)
 
+# Disconnect from the browser between polls so its session ends; the next
+# request reconnects and restores the saved cookies.
+BROWSER_IDLE_SECONDS = 60
+# An abandoned HA setup flow must not leave a remote process running forever.
+WORKER_IDLE_SECONDS = 1800
+# Closing contexts over CDP can hang on a wedged browser; never block exit on it.
+RELEASE_TIMEOUT_SECONDS = 15
+
 
 class Worker:
     def __init__(
@@ -117,17 +125,36 @@ class Worker:
             self.profiles[identity] = EmployeePortal(self.browser, self.state_dir, identity)
         return self.profiles[identity]
 
-    async def close(self) -> None:
+    @property
+    def connected(self) -> bool:
+        return self.playwright is not None
+
+    @property
+    def mfa_pending(self) -> bool:
+        return any(portal.mfa_pending for portal in self.profiles.values())
+
+    async def _release(self) -> None:
         try:
             for portal in self.profiles.values():
                 if self.browser and self.browser.is_connected():
-                    await portal.close()
+                    await portal.release()
         finally:
             # Disconnect our driver; never close Chromium or other users' contexts.
-            if self.playwright:
-                await self.playwright.stop()
-                self.playwright = None
+            self.browser = None
+            for portal in self.profiles.values():
+                portal.context = portal.page = None
+            playwright, self.playwright = self.playwright, None
+            if playwright:
+                await playwright.stop()
             await self._release_steel_session()
+
+    async def close(self) -> None:
+        """Release the browser session; the next request connects again."""
+        try:
+            async with asyncio.timeout(RELEASE_TIMEOUT_SECONDS):
+                await self._release()
+        except (PlaywrightError, PortalError, OSError, TimeoutError):
+            LOGGER.warning("Could not release the browser session cleanly")
 
     async def dispatch(self, path: str, data: dict | None) -> dict:
         if path == "health":
@@ -212,15 +239,26 @@ async def serve(worker: Worker) -> None:
     """Bound requests, sanitize errors and reserve stdout for protocol messages."""
     reader = asyncio.StreamReader(limit=16 * 1024)
     protocol = asyncio.StreamReaderProtocol(reader)
-    transport, _ = await asyncio.get_running_loop().connect_read_pipe(lambda: protocol, sys.stdin)
+    loop = asyncio.get_running_loop()
+    transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin)
     try:
+        idle_since = loop.time()
         while True:
-            try:
-                # An abandoned HA setup flow must not leave a remote process running forever.
-                async with asyncio.timeout(1800):
-                    line = await reader.readline()
-            except (ValueError, TimeoutError):
+            remaining = WORKER_IDLE_SECONDS - (loop.time() - idle_since)
+            if remaining <= 0:
                 break
+            release = worker.connected and not worker.mfa_pending
+            try:
+                async with asyncio.timeout(
+                    min(BROWSER_IDLE_SECONDS, remaining) if release else remaining
+                ):
+                    line = await reader.readline()
+            except ValueError:
+                break
+            except TimeoutError:
+                if release:
+                    await worker.close()
+                continue
             if not line:
                 break
             try:
@@ -240,6 +278,7 @@ async def serve(worker: Worker) -> None:
                 result = {"error": "portal_changed"}
             sys.stdout.write(json.dumps(result, separators=(",", ":")) + "\n")
             sys.stdout.flush()
+            idle_since = loop.time()
     finally:
         transport.close()
         await worker.close()
