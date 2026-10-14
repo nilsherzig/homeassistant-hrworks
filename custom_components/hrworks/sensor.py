@@ -16,7 +16,7 @@ TIME_SENSORS = {
     "monthly_worked": "mdi:briefcase-clock-outline",
     "monthly_target": "mdi:clock-check-outline",
     "monthly_balance": "mdi:clock-plus-outline",
-    "carryover": "mdi:clock-arrow-right-outline",
+    "carryover": "mdi:calendar-arrow-right",
     "total_balance": "mdi:timer-sand",
     "absence_deduction": "mdi:calendar-minus",
     "time_credit": "mdi:clock-edit-outline",

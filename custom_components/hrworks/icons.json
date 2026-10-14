@@ -11,7 +11,7 @@
         "default": "mdi:clock-plus-outline"
       },
       "carryover": {
-        "default": "mdi:clock-arrow-right-outline"
+        "default": "mdi:calendar-arrow-right"
       },
       "total_balance": {
         "default": "mdi:timer-sand"
