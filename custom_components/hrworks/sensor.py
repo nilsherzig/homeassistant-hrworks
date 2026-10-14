@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import EntityCategory, UnitOfTime
 
 from .entity import HrworksEntity
+from .workdays import WINDOW_DAYS
 
 TIME_SENSORS = {
     "monthly_worked": "mdi:briefcase-clock-outline",
@@ -61,8 +62,46 @@ DESCRIPTIONS = tuple(
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     async_add_entities(
-        HrworksSensor(entry.runtime_data, description) for description in DESCRIPTIONS
+        [
+            *(HrworksSensor(entry.runtime_data, description) for description in DESCRIPTIONS),
+            HrworksWorkDaysSensor(entry.runtime_data),
+        ]
     )
+
+
+class HrworksWorkDaysSensor(HrworksEntity, SensorEntity):
+    """Worked weekdays of the last 30 days; the per-day rows feed dashboard heatmaps."""
+
+    _attr_icon = "mdi:calendar-month-outline"
+    _attr_native_unit_of_measurement = "d"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    # The day list changes every update and is not useful history.
+    _unrecorded_attributes = frozenset({"days"})
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "work_days")
+
+    @property
+    def _rows(self) -> list[dict] | None:
+        return (self.coordinator.data or {}).get("work_days")
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._rows is not None
+
+    @property
+    def native_value(self) -> int | None:
+        rows = self._rows
+        return None if rows is None else sum(row["status"] == "worked" for row in rows)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        rows = self._rows or []
+        return {
+            "window_days": WINDOW_DAYS,
+            "worked_hours": round(sum(row["worked"] or 0 for row in rows), 2),
+            "days": rows,
+        }
 
 
 class HrworksSensor(HrworksEntity, SensorEntity):

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import WorkerClient, WorkerError
@@ -24,10 +26,12 @@ from .const import (
     DOMAIN,
 )
 from .totp import InvalidTotp
+from .workdays import days_to_read, overview, prune
 
 LOGGER = logging.getLogger(__name__)
 TRANSIENT_ERRORS = {"browser_unavailable", "cannot_connect"}
 RETRY_INTERVAL = timedelta(seconds=60)
+DAY_READS_TIMEOUT = 120
 
 ISSUES = (
     "session_expired",
@@ -65,6 +69,8 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
         self.entry = entry
         self.client = client
         self.last_error: str | None = None
+        self._days_store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.days")
+        self._days: dict | None = None
         self._normal_update_interval = timedelta(
             seconds=int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         )
@@ -121,7 +127,30 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
         self.last_error = None
         self.update_interval = self._normal_update_interval
         clear_issues(self.hass, self.entry)
+        data["work_days"] = await self._work_days(data)
         return data
+
+    async def _work_days(self, data: dict) -> list[dict]:
+        """Read a few past days per update; a failed day read never fails the update."""
+        if self._days is None:
+            self._days = (await self._days_store.async_load()) or {}
+        today = date.fromisoformat(data["today"]["date"])
+        events = data.get("events", [])
+        try:
+            async with asyncio.timeout(DAY_READS_TIMEOUT):
+                for index, day in enumerate(days_to_read(today, self._days, events)):
+                    result = await self.client.day(day.isoformat(), reuse=index > 0)
+                    metrics = result.get("metrics", {})
+                    self._days[day.isoformat()] = {
+                        "worked": metrics.get("today_worked"),
+                        "target": metrics.get("today_target"),
+                        "fetched": today.isoformat(),
+                    }
+        except (TimeoutError, WorkerError) as err:
+            LOGGER.debug("HR WORKS day history read stopped early: %r", err)
+        self._days = prune(today, self._days)
+        await self._days_store.async_save(self._days)
+        return overview(today, self._days, events, data.get("metrics", {}))
 
     async def _snapshot_with_auth(self, payload: dict) -> dict:
         """Recover an expired login once, including after worker replacement."""

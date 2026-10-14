@@ -123,6 +123,9 @@
       },
       "last_updated": {
         "name": "Last updated"
+      },
+      "work_days": {
+        "name": "Work days"
       }
     },
     "binary_sensor": {

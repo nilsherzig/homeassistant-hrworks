@@ -10,6 +10,7 @@ Uses your **regular employee login and authenticator**. No company API key is ne
 | Time account | Worked and target hours, monthly balance, carryover and total balance |
 | Daily time | Credited work, target and balance where the portal exposes them |
 | Vacation | Available and approved days |
+| Work days | Worked weekdays of the last 30 days; a `days` attribute lists each weekday's status (worked, leave, sick, holiday, absent, unknown) with worked and target hours |
 | Calendar | One account calendar with leave and sickness, approval status and half-day annotations |
 | Status | Clocked in (with `since` and today's intervals), on leave and on sick leave (current absence's `start`/`end`/`days`/`status`, plus the `next_*` one) |
 | Controls | Refresh button and a working-time action with a preview mode |
@@ -103,7 +104,8 @@ browser user's state directory.
 
 The refresh button also retries after a worker outage. Successful updates clear the
 relevant repairs. A calendar only covers the configured window; its `coverage`
-attribute gives the exact bounds. Absence `end` attributes are the last day, as the
+attribute gives the exact bounds. Past days for `Work days` are read a few per update
+and cached, so the 30-day window fills in over the first hour. Absence `end` attributes are the last day, as the
 portal shows it. Cancelled or rejected leave is never treated as approved absence.
 
 ## Reporting periods

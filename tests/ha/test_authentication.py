@@ -136,6 +136,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         coordinator.last_error = None
         coordinator._normal_update_interval = timedelta(minutes=15)
         coordinator.update_interval = coordinator._normal_update_interval
+        coordinator._work_days = AsyncMock(return_value=[])
         return coordinator
 
     async def test_expired_session_gets_one_read_recovery(self):
@@ -143,7 +144,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         coordinator.client.snapshot.side_effect = [WorkerError("session_expired"), {"metrics": {}}]
         with patch("custom_components.hrworks.coordinator.clear_issues"):
             result = await coordinator._async_update_data()
-        self.assertEqual(result, {"metrics": {}})
+        self.assertEqual(result, {"metrics": {}, "work_days": []})
         self.assertEqual(coordinator.client.snapshot.await_count, 2)
         coordinator.client.login.assert_awaited_once()
         coordinator.client.mfa.assert_awaited_once()
@@ -172,7 +173,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             coordinator.client.snapshot.side_effect = [WorkerError(code), {"metrics": {}}]
             with patch("custom_components.hrworks.coordinator.clear_issues") as clear:
                 result = await coordinator._async_update_data()
-            self.assertEqual(result, {"metrics": {}})
+            self.assertEqual(result, {"metrics": {}, "work_days": []})
             self.assertEqual(coordinator.client.snapshot.await_count, 2)
             coordinator.client.login.assert_not_awaited()
             self.assertIsNone(coordinator.last_error)
