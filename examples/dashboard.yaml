@@ -48,7 +48,6 @@ views:
           - type: calendar
             initial_view: listWeek
             entities:
-              - calendar.hr_works_leave
-              - calendar.hr_works_sickness
+              - calendar.hr_works
             grid_options:
               columns: full

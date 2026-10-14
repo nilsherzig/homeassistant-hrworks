@@ -3,10 +3,14 @@
 from datetime import date, datetime
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_SICKNESS
+from .const import CONF_PROFILE, DOMAIN
 from .entity import HrworksEntity
+
+# Per-kind calendars before everything moved into the one account calendar.
+LEGACY_KEYS = ("leave", "sickness")
 
 
 def calendar_event(item: dict) -> CalendarEvent:
@@ -20,19 +24,23 @@ def calendar_event(item: dict) -> CalendarEvent:
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
-    keys = ["leave"]
-    if entry.options.get(CONF_SICKNESS, True):
-        keys.append("sickness")
-    async_add_entities(HrworksCalendar(entry.runtime_data, key) for key in keys)
+    registry = er.async_get(hass)
+    for key in LEGACY_KEYS:
+        unique_id = f"{entry.data[CONF_PROFILE]}_{key}"
+        if entity_id := registry.async_get_entity_id("calendar", DOMAIN, unique_id):
+            registry.async_remove(entity_id)
+    async_add_entities([HrworksCalendar(entry.runtime_data)])
 
 
 class HrworksCalendar(HrworksEntity, CalendarEntity):
-    """A cached, read-only employee calendar."""
+    """One cached, read-only calendar for every event the account exposes."""
 
-    def __init__(self, coordinator, key: str) -> None:
-        super().__init__(coordinator, key)
-        self.key = key
-        self._attr_icon = "mdi:calendar-heart" if key == "leave" else "mdi:calendar-alert"
+    _attr_name = None
+    _attr_icon = "mdi:calendar-account"
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "calendar")
+        self._attr_translation_key = None
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -45,7 +53,7 @@ class HrworksCalendar(HrworksEntity, CalendarEntity):
             (
                 e
                 for e in (self.coordinator.data or {}).get("events", [])
-                if e["kind"] == self.key and date.fromisoformat(e["end"]) > today
+                if date.fromisoformat(e["end"]) > today
             ),
             key=lambda e: (e["start"], e["uid"]),
         )
@@ -66,9 +74,7 @@ class HrworksCalendar(HrworksEntity, CalendarEntity):
         return [
             calendar_event(e)
             for e in (self.coordinator.data or {}).get("events", [])
-            if e["kind"] == self.key
-            and date.fromisoformat(e["start"]) < end
-            and date.fromisoformat(e["end"]) > start
+            if date.fromisoformat(e["start"]) < end and date.fromisoformat(e["end"]) > start
         ]
 
     @property

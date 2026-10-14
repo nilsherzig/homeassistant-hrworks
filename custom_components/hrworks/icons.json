@@ -52,14 +52,6 @@
         "default": "mdi:medical-bag"
       }
     },
-    "calendar": {
-      "leave": {
-        "default": "mdi:calendar-heart"
-      },
-      "sickness": {
-        "default": "mdi:calendar-alert"
-      }
-    },
     "button": {
       "refresh": {
         "default": "mdi:refresh"

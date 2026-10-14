@@ -76,7 +76,7 @@
           "scan_interval": "Update interval (seconds)",
           "calendar_past_days": "Calendar history (days)",
           "calendar_future_days": "Calendar lookahead (days)",
-          "include_sickness": "Include sickness calendar",
+          "include_sickness": "Include sickness",
           "include_pending": "Include leave awaiting approval",
           "enable_time_entry": "Allow working-time submissions"
         }
@@ -134,14 +134,6 @@
       },
       "on_sick_leave": {
         "name": "On sick leave"
-      }
-    },
-    "calendar": {
-      "leave": {
-        "name": "Leave"
-      },
-      "sickness": {
-        "name": "Sickness"
       }
     },
     "button": {

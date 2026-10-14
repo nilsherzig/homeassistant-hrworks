@@ -10,7 +10,7 @@ Uses your **regular employee login and authenticator**. No company API key is ne
 | Time account | Worked and target hours, monthly balance, carryover and total balance |
 | Daily time | Credited work, target and balance where the portal exposes them |
 | Vacation | Available and approved days |
-| Calendars | Leave and sickness, with approval status and half-day annotations |
+| Calendar | One account calendar with leave and sickness, approval status and half-day annotations |
 | Status | Clocked in, on leave and on sick leave |
 | Controls | Refresh button and a working-time action with a preview mode |
 

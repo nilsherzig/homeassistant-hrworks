@@ -76,7 +76,7 @@
           "scan_interval": "Aktualisierungsintervall (Sekunden)",
           "calendar_past_days": "Kalenderhistorie (Tage)",
           "calendar_future_days": "Kalendervorschau (Tage)",
-          "include_sickness": "Krankheitskalender einbeziehen",
+          "include_sickness": "Krankmeldungen einbeziehen",
           "include_pending": "Noch nicht genehmigte Abwesenheiten einbeziehen",
           "enable_time_entry": "Arbeitszeiteinträge erlauben"
         }
@@ -134,14 +134,6 @@
       },
       "on_sick_leave": {
         "name": "Krankgemeldet"
-      }
-    },
-    "calendar": {
-      "leave": {
-        "name": "Abwesenheiten"
-      },
-      "sickness": {
-        "name": "Krankmeldungen"
       }
     },
     "button": {
