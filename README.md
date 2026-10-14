@@ -11,7 +11,7 @@ Uses your **regular employee login and authenticator**. No company API key is ne
 | Daily time | Credited work, target and balance where the portal exposes them |
 | Vacation | Available and approved days |
 | Calendar | One account calendar with leave and sickness, approval status and half-day annotations |
-| Status | Clocked in, on leave and on sick leave |
+| Status | Clocked in (with `since` and today's intervals), on leave and on sick leave (current absence's `start`/`end`/`days`/`status`, plus the `next_*` one) |
 | Controls | Refresh button and a working-time action with a preview mode |
 
 One service device per employee. English and German translations. Numeric hours for
@@ -103,8 +103,8 @@ browser user's state directory.
 
 The refresh button also retries after a worker outage. Successful updates clear the
 relevant repairs. A calendar only covers the configured window; its `coverage`
-attribute gives the exact bounds. Cancelled or rejected leave is never treated as
-approved absence.
+attribute gives the exact bounds. Absence `end` attributes are the last day, as the
+portal shows it. Cancelled or rejected leave is never treated as approved absence.
 
 ## Reporting periods
 

@@ -870,5 +870,9 @@ class EmployeePortal:
             "events": sorted(event_map.values(), key=lambda e: (e["start"], e["uid"])),
             "calendar_window": {"start": start.isoformat(), "end": end.isoformat()},
             "clocked_in": clocked_in,
+            # Intervals only; comments stay in the portal.
+            "today_entries": [
+                {k: e[k] for k in ("start", "end", "type") if e.get(k)} for e in today_entries
+            ],
             "fetched_at": datetime.now(BERLIN).isoformat(),
         }
