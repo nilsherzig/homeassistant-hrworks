@@ -441,6 +441,15 @@ class EmployeePortal:
                 raise PortalError("portal_changed", 502)
             # Portal ranges are inclusive. HA all-day calendar end dates are exclusive.
             count = normalize(item.get("count") or "")
+            # Sickness is reported, not approved: its badge reads e.g. "eAU is
+            # available" until HR checks it. Only a rejection or cancellation voids it.
+            approved = item["approved"] or (
+                kind == "sickness"
+                and not re.search(
+                    r"reject|declin|cancel|withdrawn|abgelehnt|storniert|zurückgezogen",
+                    normalize(item.get("status") or ""),
+                )
+            )
             half_day = bool(re.search(r"(?:0[.,]5|½)\s*(?:vacation|urlaub|day|tag)", count))
             events.append(
                 {
@@ -449,7 +458,7 @@ class EmployeePortal:
                     "summary": " ".join(item["title"].split()),
                     "start": ds[0].isoformat(),
                     "end": (ds[-1] + timedelta(days=1)).isoformat(),
-                    "approved": item["approved"],
+                    "approved": approved,
                     "status": item.get("status") or "",
                     "half_day": half_day,
                     "description": (item.get("status") or "") + (" · Half day" if half_day else ""),
