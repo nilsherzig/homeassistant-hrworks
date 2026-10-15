@@ -36,7 +36,7 @@ class WorkerLifecycleTests(unittest.IsolatedAsyncioTestCase):
         page = MagicMock()
         page.context.new_cdp_session = AsyncMock(return_value=cdp)
         portal = MagicMock(page=page)
-        tabs = [{"id": "T0", "session_id": "other"}, {"id": "T1", "session_id": "s-123"}]
+        tabs = [{"id": "T0", "sessionId": "other"}, {"id": "T1", "sessionId": "s-123"}]
         with patch.object(self.worker, "_daemon_tabs", return_value=tabs):
             report = await self.worker.diagnostics(portal, 3.14159)
         self.assertEqual(

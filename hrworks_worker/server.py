@@ -148,7 +148,7 @@ class Worker:
                 target = info["targetInfo"]["targetId"]
                 for tab in await asyncio.to_thread(self._daemon_tabs):
                     if tab.get("id") == target:
-                        session_id = tab.get("session_id")
+                        session_id = tab.get("sessionId") or tab.get("session_id")
                         break
         except Exception:  # noqa: BLE001 - diagnostics must never fail a snapshot
             LOGGER.debug("Could not identify the browser session", exc_info=True)
