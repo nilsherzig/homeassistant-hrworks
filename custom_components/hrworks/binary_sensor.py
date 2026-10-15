@@ -2,7 +2,11 @@
 
 from datetime import date, timedelta
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
+from homeassistant.const import EntityCategory
 
 from .const import CONF_SICKNESS
 from .entity import HrworksEntity
@@ -13,6 +17,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     if entry.options.get(CONF_SICKNESS, True):
         keys.append("on_sick_leave")
     async_add_entities(HrworksBinarySensor(entry.runtime_data, key) for key in keys)
+    async_add_entities([HrworksUpdateProblem(entry.runtime_data)])
 
 
 def event_attributes(event: dict, prefix: str = "") -> dict:
@@ -93,3 +98,28 @@ class HrworksBinarySensor(HrworksEntity, BinarySensorEntity):
         if upcoming:
             attrs.update(event_attributes(upcoming[0], "next_"))
         return attrs
+
+
+class HrworksUpdateProblem(HrworksEntity, BinarySensorEntity):
+    """On while the last refresh failed; the error and counters are on the sensors."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator) -> None:
+        super().__init__(coordinator, "update_problem")
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return not self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "error": self.coordinator.last_error,
+            "consecutive_failures": self.coordinator.consecutive_failures,
+        }

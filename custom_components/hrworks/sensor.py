@@ -59,11 +59,107 @@ DESCRIPTIONS = tuple(
     ),
 )
 
+SECONDS = dict(
+    device_class=SensorDeviceClass.DURATION,
+    native_unit_of_measurement=UnitOfTime.SECONDS,
+    state_class=SensorStateClass.MEASUREMENT,
+    suggested_display_precision=1,
+    entity_category=EntityCategory.DIAGNOSTIC,
+)
+COUNTER = dict(
+    state_class=SensorStateClass.TOTAL_INCREASING, entity_category=EntityCategory.DIAGNOSTIC
+)
+TEXT = dict(entity_category=EntityCategory.DIAGNOSTIC)
+DIAGNOSTIC_DESCRIPTIONS = (
+    SensorEntityDescription(
+        key="update_duration",
+        translation_key="update_duration",
+        icon="mdi:timer-outline",
+        **SECONDS,
+    ),
+    SensorEntityDescription(
+        key="worker_duration",
+        translation_key="worker_duration",
+        icon="mdi:timer-cog-outline",
+        **SECONDS,
+    ),
+    SensorEntityDescription(
+        key="browser_connect_duration",
+        translation_key="browser_connect_duration",
+        icon="mdi:lan-connect",
+        entity_registry_enabled_default=False,
+        **SECONDS,
+    ),
+    SensorEntityDescription(
+        key="next_update",
+        translation_key="next_update",
+        icon="mdi:calendar-clock",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        **TEXT,
+    ),
+    SensorEntityDescription(
+        key="browser_session", translation_key="browser_session", icon="mdi:tab", **TEXT
+    ),
+    SensorEntityDescription(
+        key="browser_version",
+        translation_key="browser_version",
+        icon="mdi:google-chrome",
+        entity_registry_enabled_default=False,
+        **TEXT,
+    ),
+    SensorEntityDescription(
+        key="last_error", translation_key="last_error", icon="mdi:alert-circle-outline", **TEXT
+    ),
+    SensorEntityDescription(
+        key="consecutive_failures",
+        translation_key="consecutive_failures",
+        icon="mdi:numeric-negative-1",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    SensorEntityDescription(
+        key="update_count", translation_key="update_count", icon="mdi:counter", **COUNTER
+    ),
+    SensorEntityDescription(
+        key="failed_updates",
+        translation_key="failed_updates",
+        icon="mdi:close-circle-multiple-outline",
+        **COUNTER,
+    ),
+    SensorEntityDescription(
+        key="reauthentications",
+        translation_key="reauthentications",
+        icon="mdi:login-variant",
+        **COUNTER,
+    ),
+    SensorEntityDescription(
+        key="event_count",
+        translation_key="event_count",
+        icon="mdi:calendar-multiple",
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+)
+DIAGNOSTIC_KEYS = {d.key for d in DIAGNOSTIC_DESCRIPTIONS}
+# Reported even while updates fail: they are what explains the failure.
+ALWAYS_AVAILABLE = {
+    "update_duration",
+    "next_update",
+    "last_error",
+    "consecutive_failures",
+    "update_count",
+    "failed_updates",
+    "reauthentications",
+}
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> None:
     async_add_entities(
         [
-            *(HrworksSensor(entry.runtime_data, description) for description in DESCRIPTIONS),
+            *(
+                HrworksSensor(entry.runtime_data, description)
+                for description in DESCRIPTIONS + DIAGNOSTIC_DESCRIPTIONS
+            ),
             HrworksWorkDaysSensor(entry.runtime_data),
         ]
     )
@@ -111,6 +207,8 @@ class HrworksSensor(HrworksEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
+        if self.entity_description.key in ALWAYS_AVAILABLE:
+            return self.native_value is not None
         return super().available and self.native_value is not None
 
     @property
@@ -120,15 +218,48 @@ class HrworksSensor(HrworksEntity, SensorEntity):
         if key == "last_updated":
             value = data.get("fetched_at")
             return datetime.fromisoformat(value) if value else None
+        if key in DIAGNOSTIC_KEYS:
+            return self._diagnostic(key, data)
         value = data.get("metrics", {}).get(key)
         if value is None:
             return None
         return round(value / 60, 4) if key in TIME_SENSORS else value
 
+    def _diagnostic(self, key: str, data: dict):
+        coordinator = self.coordinator
+        report = data.get("diagnostics") or {}
+        match key:
+            case "update_duration":
+                return coordinator.last_duration
+            case "worker_duration":
+                return report.get("worker_seconds")
+            case "browser_connect_duration":
+                return report.get("connect_seconds")
+            case "next_update":
+                return coordinator.next_update
+            case "browser_session":
+                return report.get("browser_session")
+            case "browser_version":
+                return report.get("browser_version")
+            case "last_error":
+                return coordinator.last_error or "none"
+            case "consecutive_failures":
+                return coordinator.consecutive_failures
+            case "update_count":
+                return coordinator.update_count
+            case "failed_updates":
+                return coordinator.failed_updates
+            case "reauthentications":
+                return coordinator.reauthentications
+            case "event_count":
+                return len(data["events"]) if "events" in data else None
+
     @property
     def extra_state_attributes(self) -> dict:
         data = self.coordinator.data or {}
         key = self.entity_description.key
+        if key in DIAGNOSTIC_KEYS:
+            return self._diagnostic_attributes(key, data)
         attrs = {"source": "HR WORKS employee portal"}
         if key in TIME_SENSORS:
             minutes = data.get("metrics", {}).get(key)
@@ -140,3 +271,22 @@ class HrworksSensor(HrworksEntity, SensorEntity):
         elif key.startswith("vacation_"):
             attrs["year"] = data.get("vacation_year")
         return attrs
+
+    def _diagnostic_attributes(self, key: str, data: dict) -> dict:
+        report = data.get("diagnostics") or {}
+        if key == "worker_duration":
+            return {f"{step}_seconds": value for step, value in (data.get("timings") or {}).items()}
+        if key == "browser_session":
+            return {
+                attr: report.get(source)
+                for attr, source in {
+                    "backend": "backend",
+                    "endpoint": "browser_endpoint",
+                    "browser_version": "browser_version",
+                    "connections": "connections",
+                }.items()
+                if report.get(source) is not None
+            }
+        if key == "last_error":
+            return {"last_update_success": self.coordinator.last_update_success}
+        return {}

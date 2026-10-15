@@ -9,6 +9,15 @@ async def async_get_config_entry_diagnostics(hass, config_entry) -> dict:
         "options": dict(config_entry.options),
         "last_error": coordinator.last_error if coordinator else None,
         "last_update_success": coordinator.last_update_success if coordinator else False,
+        "update_duration_seconds": coordinator.last_duration if coordinator else None,
+        "update_count": coordinator.update_count if coordinator else 0,
+        "failed_updates": coordinator.failed_updates if coordinator else 0,
+        "consecutive_failures": coordinator.consecutive_failures if coordinator else 0,
+        "reauthentications": coordinator.reauthentications if coordinator else 0,
+        "timings": data.get("timings"),
+        "worker": {
+            k: v for k, v in (data.get("diagnostics") or {}).items() if k != "browser_endpoint"
+        },
         "metric_keys": sorted(data.get("metrics", {})),
         "event_count": len(data.get("events", [])),
         "has_current_month": data.get("account", {}).get("current_month"),

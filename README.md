@@ -108,6 +108,25 @@ attribute gives the exact bounds. Past days for `Work days` are read a few per u
 and cached, so the 30-day window fills in over the first hour. Absence `end` attributes are the last day, as the
 portal shows it. Cancelled or rejected leave is never treated as approved absence.
 
+## Diagnostic sensors
+
+Each employee device also carries diagnostic entities (category *Diagnostic*) for
+telling a slow or failing refresh from a healthy one:
+
+| Entity | Meaning |
+| --- | --- |
+| Update duration | Seconds the whole refresh took in HA (SSH, worker, recovery). |
+| Worker duration | Seconds the worker spent on the snapshot; the steps (`account_seconds`, `events_seconds`, `today_seconds`) are attributes. |
+| Browser session | The browser-daemon (or Steel) session the worker used, with backend, endpoint, browser version and the number of browser connections as attributes. |
+| Browser connect duration, Browser version | Same data as single values (disabled by default). |
+| Next update | When the next scheduled refresh runs (shorter while retrying). |
+| Last error | `none` or the worker's error code. |
+| Consecutive failures, Failed updates, Updates, Re-logins | Counters since HA started; *Re-logins* counts automatic recoveries with the saved TOTP. |
+| Calendar events | Events in the calendar window of the last snapshot. |
+| Update problem | Binary sensor, on while the last refresh failed. |
+
+No personal HR data is in them. The browser endpoint is only host and port.
+
 ## Reporting periods
 
 HR WORKS may expose the newest available month before it creates an account for

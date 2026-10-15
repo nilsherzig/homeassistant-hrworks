@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+import time
+from datetime import date, datetime, timedelta
 
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import WorkerClient, WorkerError
 from .auth import authenticate
@@ -71,6 +73,13 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
         self.last_error: str | None = None
         self._days_store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.days")
         self._days: dict | None = None
+        # Operational counters for the diagnostic sensors (kept while HA runs).
+        self.last_duration: float | None = None
+        self.last_finished: datetime | None = None
+        self.update_count = 0
+        self.failed_updates = 0
+        self.consecutive_failures = 0
+        self.reauthentications = 0
         self._normal_update_interval = timedelta(
             seconds=int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         )
@@ -82,7 +91,26 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
             update_interval=self._normal_update_interval,
         )
 
+    @property
+    def next_update(self) -> datetime | None:
+        if self.last_finished is None or self.update_interval is None:
+            return None
+        return self.last_finished + self.update_interval
+
     async def _async_update_data(self) -> dict:
+        started = time.monotonic()
+        self.update_count += 1
+        try:
+            return await self._update()
+        except BaseException:
+            self.failed_updates += 1
+            self.consecutive_failures += 1
+            raise
+        finally:
+            self.last_duration = round(time.monotonic() - started, 2)
+            self.last_finished = dt_util.utcnow()
+
+    async def _update(self) -> dict:
         options = self.entry.options
         try:
             payload = {
@@ -125,6 +153,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
             create_issue(self.hass, self.entry, key)
             raise UpdateFailed(err.code) from err
         self.last_error = None
+        self.consecutive_failures = 0
         self.update_interval = self._normal_update_interval
         clear_issues(self.hass, self.entry)
         data["work_days"] = await self._work_days(data)
@@ -186,6 +215,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                 "HR WORKS automatic recovery failed during %s (error=%s)", stage, err.code
             )
             raise
+        self.reauthentications += 1
         try:
             return await self.client.snapshot(payload)
         except WorkerError as err:

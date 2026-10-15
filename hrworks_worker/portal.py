@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -830,7 +831,10 @@ class EmployeePortal:
         today = datetime.now(BERLIN).date()
         start = today - timedelta(days=options["calendar_past_days"])
         end = today + timedelta(days=options["calendar_future_days"] + 1)
+        started = time.monotonic()
         metrics, account = await self.account(today)
+        timings = {"account": time.monotonic() - started}
+        mark = time.monotonic()
         event_map = {}
         for year in range(start.year, end.year + 1):
             for kind in ["leave", "sickness"] if options["include_sickness"] else ["leave"]:
@@ -852,7 +856,10 @@ class EmployeePortal:
                         if not options["include_pending"] or not pending:
                             continue
                     event_map[event["uid"]] = event
+        timings["events"] = time.monotonic() - mark
+        mark = time.monotonic()
         today_metrics, today_entries = await self.working_day(today)
+        timings["today"] = time.monotonic() - mark
         metrics.update(today_metrics)
         page = await self.open()
         text = await page.locator("body").inner_text()
@@ -875,4 +882,8 @@ class EmployeePortal:
                 {k: e[k] for k in ("start", "end", "type") if e.get(k)} for e in today_entries
             ],
             "fetched_at": datetime.now(BERLIN).isoformat(),
+            "timings": {
+                **{step: round(seconds, 2) for step, seconds in timings.items()},
+                "total": round(time.monotonic() - started, 2),
+            },
         }

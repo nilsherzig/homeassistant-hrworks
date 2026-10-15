@@ -126,6 +126,42 @@
       },
       "work_days": {
         "name": "Arbeitstage"
+      },
+      "update_duration": {
+        "name": "Aktualisierungsdauer"
+      },
+      "worker_duration": {
+        "name": "Worker-Dauer"
+      },
+      "browser_connect_duration": {
+        "name": "Browser-Verbindungsdauer"
+      },
+      "next_update": {
+        "name": "Nächste Aktualisierung"
+      },
+      "browser_session": {
+        "name": "Browser-Sitzung"
+      },
+      "browser_version": {
+        "name": "Browser-Version"
+      },
+      "last_error": {
+        "name": "Letzter Fehler"
+      },
+      "consecutive_failures": {
+        "name": "Aufeinanderfolgende Fehler"
+      },
+      "update_count": {
+        "name": "Aktualisierungen"
+      },
+      "failed_updates": {
+        "name": "Fehlgeschlagene Aktualisierungen"
+      },
+      "reauthentications": {
+        "name": "Erneute Anmeldungen"
+      },
+      "event_count": {
+        "name": "Kalendereinträge"
       }
     },
     "binary_sensor": {
@@ -137,6 +173,9 @@
       },
       "on_sick_leave": {
         "name": "Krankgemeldet"
+      },
+      "update_problem": {
+        "name": "Aktualisierungsproblem"
       }
     },
     "button": {

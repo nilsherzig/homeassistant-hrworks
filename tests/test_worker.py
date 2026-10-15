@@ -23,6 +23,41 @@ class WorkerLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.worker.playwright = MagicMock(stop=AsyncMock())
         self.worker.browser = MagicMock(is_connected=MagicMock(return_value=True))
 
+    async def test_diagnostics_name_the_browser_session_without_personal_data(self):
+        self.connect()
+        self.worker.cdp_url = "ws://127.0.0.1:3001/chromium"
+        self.worker.browser.version = "155.0"
+        self.worker.connect_seconds = 0.4
+        self.worker.connections = 2
+        cdp = MagicMock(
+            send=AsyncMock(return_value={"targetInfo": {"targetId": "T1"}}),
+            detach=AsyncMock(),
+        )
+        page = MagicMock()
+        page.context.new_cdp_session = AsyncMock(return_value=cdp)
+        portal = MagicMock(page=page)
+        tabs = [{"id": "T0", "session_id": "other"}, {"id": "T1", "session_id": "s-123"}]
+        with patch.object(self.worker, "_daemon_tabs", return_value=tabs):
+            report = await self.worker.diagnostics(portal, 3.14159)
+        self.assertEqual(
+            report,
+            {
+                "worker_seconds": 3.14,
+                "backend": "cdp",
+                "browser_version": "155.0",
+                "browser_session": "s-123",
+                "browser_endpoint": "127.0.0.1:3001",
+                "connect_seconds": 0.4,
+                "connections": 2,
+            },
+        )
+
+    async def test_diagnostics_survive_an_unidentifiable_session(self):
+        self.connect()
+        portal = MagicMock(page=None)
+        report = await self.worker.diagnostics(portal, 1)
+        self.assertIsNone(report["browser_session"])
+
     async def test_close_does_not_hang_on_a_wedged_context(self):
         self.connect()
         playwright = self.worker.playwright

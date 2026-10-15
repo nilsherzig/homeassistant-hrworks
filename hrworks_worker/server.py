@@ -8,9 +8,11 @@ import logging
 import os
 import re
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from playwright.async_api import Error as PlaywrightError
@@ -48,6 +50,10 @@ class Worker:
         self.browser = None
         self.steel_session_id: str | None = None
         self.profiles: dict[str, EmployeePortal] = {}
+        # What the last snapshot ran on, for the integration's diagnostic sensors.
+        self.connect_seconds: float | None = None
+        self.connections = 0
+        self._browser_session: tuple[int, str | None] | None = None
 
     def _steel_request(self, path: str, *, payload: dict | None = None) -> dict:
         data = json.dumps(payload or {}).encode() if payload is not None else None
@@ -97,6 +103,7 @@ class Worker:
             return
         if self.backend == "steel":
             await self._release_steel_session()
+        started = time.monotonic()
         if self.playwright is None:
             self.playwright = await async_playwright().start()
         endpoint = self.cdp_url
@@ -109,9 +116,58 @@ class Worker:
         except PlaywrightError:
             await self._release_steel_session()
             raise
+        self.connect_seconds = round(time.monotonic() - started, 2)
+        self.connections += 1
         for portal in self.profiles.values():
             portal.browser = self.browser
             portal.context = portal.page = None
+
+    def _daemon_tabs(self) -> list[dict]:
+        """The browser-daemon's tab list (its `/json/list` names each tab's session)."""
+        parts = urlsplit(self.cdp_url)
+        scheme = "https" if parts.scheme in {"wss", "https"} else "http"
+        with urlopen(f"{scheme}://{parts.netloc}/json/list", timeout=3) as response:
+            tabs = json.load(response)
+        return tabs if isinstance(tabs, list) else []
+
+    async def _browser_session_id(self, portal: EmployeePortal) -> str | None:
+        """The session of the browser this connection got (browser-daemon: its session id)."""
+        if self.backend == "steel":
+            return self.steel_session_id
+        key = id(self.browser)
+        if self._browser_session and self._browser_session[0] == key:
+            return self._browser_session[1]
+        session_id = None
+        try:
+            if portal.page is not None:
+                cdp = await portal.page.context.new_cdp_session(portal.page)
+                try:
+                    info = await cdp.send("Target.getTargetInfo")
+                finally:
+                    await cdp.detach()
+                target = info["targetInfo"]["targetId"]
+                for tab in await asyncio.to_thread(self._daemon_tabs):
+                    if tab.get("id") == target:
+                        session_id = tab.get("session_id")
+                        break
+        except Exception:  # noqa: BLE001 - diagnostics must never fail a snapshot
+            LOGGER.debug("Could not identify the browser session", exc_info=True)
+        if session_id is not None or portal.page is not None:
+            self._browser_session = (key, session_id)
+        return session_id
+
+    async def diagnostics(self, portal: EmployeePortal, seconds: float) -> dict:
+        """Where and how a snapshot ran: no personal data, no endpoint secrets."""
+        parts = urlsplit(self.cdp_url)
+        return {
+            "worker_seconds": round(seconds, 2),
+            "backend": self.backend,
+            "browser_version": getattr(self.browser, "version", None),
+            "browser_session": await self._browser_session_id(portal),
+            "browser_endpoint": parts.netloc or None,
+            "connect_seconds": self.connect_seconds,
+            "connections": self.connections,
+        }
 
     async def portal(self, identity: str, *, create: bool = False) -> EmployeePortal:
         if not re.fullmatch(r"[a-f0-9]{64}", identity):
@@ -225,7 +281,12 @@ class Worker:
                     for key in ("include_sickness", "include_pending"):
                         if type(data.get(key)) is not bool:
                             raise PortalError("invalid_request")
-                    return await portal.snapshot(data)
+                    started = time.monotonic()
+                    result = await portal.snapshot(data)
+                    result["diagnostics"] = await self.diagnostics(
+                        portal, time.monotonic() - started
+                    )
+                    return result
                 case "record":
                     if type(data.get("dry_run", True)) is not bool:
                         raise PortalError("invalid_request")
