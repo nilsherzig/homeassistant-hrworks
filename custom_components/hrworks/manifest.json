@@ -5,6 +5,10 @@
     "@pschmitt"
   ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
   "documentation": "https://github.com/pschmitt/homeassistant-hrworks",
   "integration_type": "service",
   "iot_class": "cloud_polling",
@@ -12,5 +16,5 @@
   "requirements": [
     "asyncssh>=2.14.2"
   ],
-  "version": "8"
+  "version": "8.1.0"
 }
