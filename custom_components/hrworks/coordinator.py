@@ -67,6 +67,13 @@ def clear_issues(hass, entry, *, include_writes: bool = False) -> None:
 class HrworksCoordinator(DataUpdateCoordinator[dict]):
     """One snapshot updates all sensors and calendars."""
 
+    last_duration: float | None = None
+    last_finished: datetime | None = None
+    update_count: int = 0
+    failed_updates: int = 0
+    consecutive_failures: int = 0
+    reauthentications: int = 0
+
     def __init__(self, hass, entry, client: WorkerClient) -> None:
         self.entry = entry
         self.client = client

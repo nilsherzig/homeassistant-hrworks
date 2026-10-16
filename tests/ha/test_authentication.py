@@ -137,6 +137,12 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         coordinator._normal_update_interval = timedelta(minutes=15)
         coordinator.update_interval = coordinator._normal_update_interval
         coordinator._work_days = AsyncMock(return_value=[])
+        coordinator.update_count = 0
+        coordinator.failed_updates = 0
+        coordinator.consecutive_failures = 0
+        coordinator.reauthentications = 0
+        coordinator.last_duration = None
+        coordinator.last_finished = None
         return coordinator
 
     async def test_expired_session_gets_one_read_recovery(self):
