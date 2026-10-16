@@ -113,6 +113,7 @@ def account_metrics(rows: list[list[str]]) -> tuple[dict, str]:
 
 
 VIEWPORT = {"width": 1600, "height": 1000}
+HRWORKS_COOKIES = re.compile(r"(^|\.)hrworks\.de$")
 
 
 async def ensure_viewport(page: Page) -> None:
@@ -135,8 +136,13 @@ async def ensure_viewport(page: Page) -> None:
 class EmployeePortal:
     """An isolated context and serialized operations for one employee."""
 
-    def __init__(self, browser: Browser, state_dir: Path, identity: str) -> None:
+    def __init__(
+        self, browser: Browser, state_dir: Path, identity: str, *, shared: bool = False
+    ) -> None:
         self.browser = browser
+        # A persistent browser profile (browser-daemon `?profile=`): the context is
+        # the profile's own, so its cookies are used and only our page is closed.
+        self.shared = shared
         self.state_dir = state_dir
         self.identity = identity
         self.context: BrowserContext | None = None
@@ -151,14 +157,18 @@ class EmployeePortal:
     async def open(self, *, fresh: bool = False) -> Page:
         if self.page is not None and not self.page.is_closed():
             return self.page
-        self.context = await self.browser.new_context(
-            storage_state=str(self.state_path) if self.state_path.exists() and not fresh else None,
-            locale="en-GB",
-            timezone_id="Europe/Berlin",
-            viewport=VIEWPORT,
-            accept_downloads=False,
-            service_workers="block",
-        )
+        if self.context is None:
+            seed = self.state_path.exists() and not fresh and not self.shared
+            self.context = await self.browser.new_context(
+                storage_state=str(self.state_path) if seed else None,
+                locale="en-GB",
+                timezone_id="Europe/Berlin",
+                viewport=VIEWPORT,
+                accept_downloads=False,
+                service_workers="block",
+            )
+        if fresh and self.shared:
+            await self.forget()
         self.page = await self.context.new_page()
         await ensure_viewport(self.page)
         self.page.set_default_timeout(20000)
@@ -179,9 +189,20 @@ class EmployeePortal:
         temporary.replace(self.state_path)
 
     async def close(self) -> None:
+        if self.shared:
+            # Never close the profile's context: it holds the user's own tabs.
+            page, self.page = self.page, None
+            if page is not None and not page.is_closed():
+                await page.close()
+            return
         if self.context:
             await self.context.close()
         self.context = self.page = None
+
+    async def forget(self) -> None:
+        """Drop the HR WORKS cookies of a shared profile context."""
+        if self.context is not None:
+            await self.context.clear_cookies(domain=HRWORKS_COOKIES)
 
     @property
     def mfa_pending(self) -> bool:

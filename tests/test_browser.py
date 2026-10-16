@@ -75,6 +75,26 @@ class BrowserTests(unittest.IsolatedAsyncioTestCase):
         await self.portal.open(fresh=True)
         self.assertEqual(await self.portal.context.cookies(), [])
 
+    async def test_shared_profile_keeps_context_and_other_cookies(self):
+        await self.portal.close()
+        shared = EmployeePortal(self.browser, Path(self.directory.name), "b" * 64, shared=True)
+        await shared.open()
+        context = shared.context
+        await context.add_cookies(
+            [
+                {"name": "synthetic", "value": "test", "url": "https://ssl6.hrworks.de"},
+                {"name": "other", "value": "kept", "url": "https://example.com"},
+            ]
+        )
+        await shared.close()
+        self.assertIsNone(shared.page)
+        self.assertIs(shared.context, context)
+        self.assertEqual(len(await context.cookies()), 2)
+        await shared.open(fresh=True)
+        self.assertEqual([c["name"] for c in await context.cookies()], ["other"])
+        await shared.close()
+        await context.close()
+
     async def test_unknown_labels_fail_visibly(self):
         await self.page.locator("label").evaluate_all(
             "labels => labels.forEach(label => label.textContent='Changed meaning')"

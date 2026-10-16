@@ -32,6 +32,11 @@ process with `hrworks worker` and an isolated browser context; it never closes t
 The default CDP endpoint is `http://127.0.0.1:9222`. Cookie state is private to the
 worker's OS user, shared with HA when they use that same worker user.
 
+With browser-daemon, `?profile=<name>` on the CDP URL (for example
+`ws://127.0.0.1:3001/chromium?profile=hrworks`) makes the worker use that persistent
+profile: it reuses the profile's HR WORKS login instead of its saved cookies, closes
+only its own tab and keeps the profile's context and other cookies.
+
 Local worker:
 
 ```bash

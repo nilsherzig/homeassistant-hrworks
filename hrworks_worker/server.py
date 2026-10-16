@@ -12,7 +12,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
 from playwright.async_api import Error as PlaywrightError
@@ -42,6 +42,8 @@ class Worker:
         steel_api_url: str = "http://127.0.0.1:3002",
     ) -> None:
         self.cdp_url = cdp_url
+        # browser-daemon persistent profile (`?profile=<name>`): reuse its login.
+        self.shared_profile = "profile" in parse_qs(urlsplit(cdp_url).query)
         self.state_dir = state_dir or Path.home() / ".local/state/hrworks-worker"
         self.enable_writes = enable_writes
         self.backend = backend
@@ -178,7 +180,9 @@ class Worker:
                 raise PortalError("session_expired", 403)
             if len(self.profiles) >= 16:
                 raise PortalError("busy", 503)
-            self.profiles[identity] = EmployeePortal(self.browser, self.state_dir, identity)
+            self.profiles[identity] = EmployeePortal(
+                self.browser, self.state_dir, identity, shared=self.shared_profile
+            )
         return self.profiles[identity]
 
     @property
@@ -248,6 +252,8 @@ class Worker:
             existing = self.profiles.get(match[1])
             if existing:
                 async with existing.lock:
+                    if existing.shared:
+                        await existing.forget()
                     await existing.close()
                     existing.state_path.unlink(missing_ok=True)
                     self.profiles.pop(match[1], None)
