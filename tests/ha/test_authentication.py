@@ -186,14 +186,19 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
                 await coordinator._async_update_data()
         coordinator.client.login.assert_not_awaited()
 
-    async def test_transient_failure_gets_one_immediate_read_retry(self):
+    async def test_transient_failures_get_three_delayed_read_retries(self):
         for code in ("browser_unavailable", "cannot_connect"):
             coordinator = self.coordinator()
-            coordinator.client.snapshot.side_effect = [WorkerError(code), {"metrics": {}}]
+            coordinator.client.snapshot.side_effect = [
+                WorkerError(code),
+                WorkerError(code),
+                WorkerError(code),
+                {"metrics": {}},
+            ]
             with patch("custom_components.hrworks.coordinator.clear_issues") as clear:
                 result = await coordinator._async_update_data()
             self.assertEqual(result, {"metrics": {}, "work_days": []})
-            self.assertEqual(coordinator.client.snapshot.await_count, 2)
+            self.assertEqual(coordinator.client.snapshot.await_count, 4)
             coordinator.client.login.assert_not_awaited()
             self.assertIsNone(coordinator.last_error)
             self.assertEqual(coordinator.update_interval, timedelta(minutes=15))
@@ -205,7 +210,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         with patch("custom_components.hrworks.coordinator.create_issue") as issue:
             with self.assertRaises(UpdateFailed):
                 await coordinator._async_update_data()
-        self.assertEqual(coordinator.client.snapshot.await_count, 2)
+        self.assertEqual(coordinator.client.snapshot.await_count, 4)
         self.assertEqual(coordinator.update_interval, timedelta(seconds=60))
         coordinator.hass.config_entries.async_schedule_reload.assert_called_once()
         issue.assert_not_called()

@@ -32,7 +32,7 @@ from .workdays import days_to_read, overview, prune
 
 LOGGER = logging.getLogger(__name__)
 TRANSIENT_ERRORS = {"browser_unavailable", "cannot_connect"}
-TRANSIENT_RETRY_DELAYS = (3, 6)
+TRANSIENT_RETRY_DELAYS = (3, 6, 10)
 AUTO_RELOAD_COOLDOWN = 300
 RETRY_INTERVAL = timedelta(seconds=60)
 DAY_READS_TIMEOUT = 120

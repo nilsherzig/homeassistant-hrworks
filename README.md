@@ -195,12 +195,13 @@ as you would your password manager.
 With a URI saved, an expired session gets one fresh login and one snapshot retry.
 If the portal rejects the generated code, the login form stays open for a manual
 code or an updated URI. A browser or connection failure discards the failed worker
-session. Home Assistant retries the read up to three times, waiting three and then
-six seconds between attempts, before scheduling recovery and polling every minute
-while those failures persist. Successful updates restore the configured polling
-interval and clear the worker repair. Working-time submissions are never
-automatically replayed; a browser failure during a submission is reported as
-uncertain so you can check the recorded times before trying again.
+session. Home Assistant retries the read up to three times after the first attempt,
+waiting three, six and then ten seconds between attempts, before scheduling recovery
+and polling every minute while those failures persist. Successful updates restore
+the configured polling interval and clear the worker repair. Working-time
+submissions are never automatically replayed; a browser failure during a
+submission is reported as uncertain so you can check the recorded times before
+trying again.
 
 The adapter discovers year/month options, follows navigation links, reads editor
 controls through their labels, and discovers working-time choices by displayed
