@@ -32,6 +32,7 @@ from .workdays import days_to_read, overview, prune
 
 LOGGER = logging.getLogger(__name__)
 TRANSIENT_ERRORS = {"browser_unavailable", "cannot_connect"}
+TRANSIENT_RETRY_DELAYS = (3, 6)
 AUTO_RELOAD_COOLDOWN = 300
 RETRY_INTERVAL = timedelta(seconds=60)
 DAY_READS_TIMEOUT = 120
@@ -127,14 +128,25 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                 CONF_SICKNESS: options.get(CONF_SICKNESS, True),
                 CONF_PENDING: options.get(CONF_PENDING, False),
             }
-            try:
-                data = await self._snapshot_with_auth(payload)
-            except WorkerError as err:
-                if err.code not in TRANSIENT_ERRORS:
-                    raise
-                # The transport discarded the failed worker under its request lock.
-                # Only reads get one immediate attempt against a fresh worker.
-                data = await self._snapshot_with_auth(payload)
+            for attempt in range(len(TRANSIENT_RETRY_DELAYS) + 1):
+                try:
+                    data = await self._snapshot_with_auth(payload)
+                    break
+                except WorkerError as err:
+                    if err.code not in TRANSIENT_ERRORS or attempt == len(TRANSIENT_RETRY_DELAYS):
+                        raise
+                    delay = TRANSIENT_RETRY_DELAYS[attempt]
+                    LOGGER.warning(
+                        "HR WORKS read failed transiently (error=%s); retrying in %ss "
+                        "(attempt %s/%s)",
+                        err.code,
+                        delay,
+                        attempt + 2,
+                        len(TRANSIENT_RETRY_DELAYS) + 1,
+                    )
+                    # The transport discarded the failed worker under its request
+                    # lock. Backoff gives a restarting browser daemon time to return.
+                    await asyncio.sleep(delay)
         except WorkerError as err:
             self.last_error = err.code
             self.update_interval = (
