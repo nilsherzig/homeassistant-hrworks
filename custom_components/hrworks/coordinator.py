@@ -158,7 +158,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                     else "worker_unavailable"
                 )
             )
-            if key == "worker_unavailable":
+            if key == "worker_unavailable" and err.code in TRANSIENT_ERRORS:
                 domain_data = getattr(self.hass, "data", None)
                 reloads = (
                     domain_data.setdefault(DOMAIN, {})

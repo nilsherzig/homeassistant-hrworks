@@ -137,7 +137,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
     def coordinator(self, uri=True):
         coordinator = object.__new__(HrworksCoordinator)
         coordinator.entry = SimpleNamespace(
-            options={}, data={**DATA, **({"totp_uri": URI} if uri else {})}
+            entry_id="test-entry", options={}, data={**DATA, **({"totp_uri": URI} if uri else {})}
         )
         coordinator.client = SimpleNamespace(
             snapshot=AsyncMock(),
@@ -145,6 +145,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             mfa=AsyncMock(),
         )
         coordinator.hass = MagicMock()
+        coordinator.hass.data = {}
         coordinator.last_error = None
         coordinator._normal_update_interval = timedelta(minutes=15)
         coordinator.update_interval = coordinator._normal_update_interval
