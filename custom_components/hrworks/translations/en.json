@@ -231,12 +231,11 @@
     },
     "worker_unavailable": {
       "title": "Browser worker unavailable",
-      "description": "SSH or Chromium for {name} is unavailable. Check the SSH connection, worker package and browser. Updates resume automatically when the connection returns.",
       "fix_flow": {
         "step": {
           "confirm": {
             "title": "Reload HR WORKS",
-            "description": "Reload the integration to restart the browser worker and re-establish the connection."
+            "description": "SSH or Chromium for {name} is unavailable. Reload the integration to restart the browser worker and re-establish the connection."
           }
         },
         "abort": {

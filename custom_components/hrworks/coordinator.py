@@ -168,11 +168,9 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                 self._reloads = reloads
                 entry_id = getattr(self.entry, "entry_id", "default")
                 reload_key = f"{entry_id}_last_auto_reload"
-                last_reload = reloads.get(reload_key, 0)
+                last_reload = reloads.get(reload_key)
                 now = time.monotonic()
-                if not isinstance(last_reload, (int, float)):
-                    last_reload = 0
-                if now - last_reload > AUTO_RELOAD_COOLDOWN:
+                if last_reload is None or (now - last_reload > AUTO_RELOAD_COOLDOWN):
                     reloads[reload_key] = now
                     LOGGER.warning(
                         "HR WORKS worker unavailable (%s); scheduling automatic integration reload to recover",
