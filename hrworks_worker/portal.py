@@ -116,6 +116,12 @@ VIEWPORT = {"width": 1600, "height": 1000}
 HRWORKS_COOKIES = re.compile(r"(^|\.)hrworks\.de$")
 
 
+def _is_authenticated_url(url: str) -> bool:
+    """An /o/ path on the login host is still the unauthenticated portal."""
+    parsed = urlsplit(url)
+    return parsed.hostname != "login.hrworks.de" and parsed.path.startswith("/o/")
+
+
 async def ensure_viewport(page: Page) -> None:
     """Make the page really render at VIEWPORT.
 
@@ -158,15 +164,24 @@ class EmployeePortal:
         if self.page is not None and not self.page.is_closed():
             return self.page
         if self.context is None:
-            seed = self.state_path.exists() and not fresh and not self.shared
-            self.context = await self.browser.new_context(
-                storage_state=str(self.state_path) if seed else None,
-                locale="en-GB",
-                timezone_id="Europe/Berlin",
-                viewport=VIEWPORT,
-                accept_downloads=False,
-                service_workers="block",
-            )
+            if self.shared:
+                # CDP attaches to the browser-daemon's persistent profile. Reuse
+                # its default context so cookies survive worker reconnects; a
+                # newly-created context is isolated and starts unauthenticated.
+                contexts = self.browser.contexts
+                if not contexts:
+                    raise PortalError("browser_unavailable", 503)
+                self.context = contexts[0]
+            else:
+                seed = self.state_path.exists() and not fresh
+                self.context = await self.browser.new_context(
+                    storage_state=str(self.state_path) if seed else None,
+                    locale="en-GB",
+                    timezone_id="Europe/Berlin",
+                    viewport=VIEWPORT,
+                    accept_downloads=False,
+                    service_workers="block",
+                )
         if fresh and self.shared:
             await self.forget()
         self.page = await self.context.new_page()
@@ -256,16 +271,16 @@ class EmployeePortal:
                 timeout=45000,
             )
             await page.locator("body").wait_for(timeout=45000)
-        if "login.hrworks.de" in page.url:
+        if not _is_authenticated_url(page.url):
             raise PortalError("session_expired", 403)
         try:
             await page.locator(".m-portlet").first.wait_for(state="visible", timeout=45000)
         except PlaywrightTimeout:
-            if "login.hrworks.de" in page.url:
+            if not _is_authenticated_url(page.url):
                 raise PortalError("session_expired", 403) from None
             raise
         await self.settle()
-        if "login.hrworks.de" in page.url:
+        if not _is_authenticated_url(page.url):
             raise PortalError("session_expired", 403)
         return page
 
@@ -276,7 +291,7 @@ class EmployeePortal:
             await self.close()
         page = await self.open(fresh=force)
         await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        if "/o/" in page.url:
+        if _is_authenticated_url(page.url):
             await self.settle()
             await self.save_session()
             return {"profile_id": self.identity, "authenticated": True}
@@ -293,7 +308,15 @@ class EmployeePortal:
         await page.locator("input[type=password]").fill(password)
         await page.get_by_role("button", name=re.compile(r"Log in to HR WORKS|Anmelden")).click()
         try:
-            await page.wait_for_function("location.pathname !== '/'", timeout=15000)
+            await page.wait_for_function(
+                """() => {
+                    const { hostname, pathname } = location;
+                    return pathname.includes('2fa-selection')
+                        || pathname.includes('2fa-totp')
+                        || (hostname !== 'login.hrworks.de' && pathname.startsWith('/o/'));
+                }""",
+                timeout=15000,
+            )
         except PlaywrightTimeout:
             raise PortalError("invalid_auth", 403) from None
         if "2fa-selection" in page.url:
@@ -305,7 +328,7 @@ class EmployeePortal:
         if "2fa-totp" in page.url:
             self.mfa_started = datetime.now(BERLIN)
             return {"profile_id": self.identity, "mfa_required": True}
-        if "/o/" not in page.url:
+        if not _is_authenticated_url(page.url):
             raise PortalError("unsupported_mfa", 403)
         await self.settle()
         await self.save_session()
@@ -324,7 +347,11 @@ class EmployeePortal:
         await page.locator("input:visible").fill(code)
         await page.get_by_role("button", name=re.compile(r"^Unlock$|^Freischalten$")).click()
         try:
-            await page.wait_for_url("**/o/**", timeout=10000, wait_until="domcontentloaded")
+            await page.wait_for_function(
+                """() => location.hostname !== 'login.hrworks.de'
+                    && location.pathname.startsWith('/o/')""",
+                timeout=10000,
+            )
         except PlaywrightTimeout:
             raise PortalError("invalid_code", 403) from None
         await self.settle()
