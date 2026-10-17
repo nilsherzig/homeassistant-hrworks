@@ -291,8 +291,7 @@ class EmployeePortal:
             await self.close()
         page = await self.open(fresh=force)
         await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        if _is_authenticated_url(page.url):
-            await self.settle()
+        if await self._authenticated_portal_ready():
             await self.save_session()
             return {"profile_id": self.identity, "authenticated": True}
         if not force:
@@ -328,11 +327,24 @@ class EmployeePortal:
         if "2fa-totp" in page.url:
             self.mfa_started = datetime.now(BERLIN)
             return {"profile_id": self.identity, "mfa_required": True}
-        if not _is_authenticated_url(page.url):
+        if not await self._authenticated_portal_ready():
+            if "login.hrworks.de" in page.url:
+                raise PortalError("session_expired", 403)
             raise PortalError("unsupported_mfa", 403)
-        await self.settle()
         await self.save_session()
         return {"profile_id": self.identity, "authenticated": True}
+
+    async def _authenticated_portal_ready(self) -> bool:
+        """Require the rendered application, not just a URL that resembles one."""
+        page = await self.open()
+        if not _is_authenticated_url(page.url):
+            return False
+        try:
+            await page.locator(".m-portlet").first.wait_for(state="visible", timeout=15000)
+        except PlaywrightTimeout:
+            return False
+        await self.settle()
+        return _is_authenticated_url(page.url)
 
     async def mfa(self, code: str) -> dict:
         if (
@@ -355,6 +367,8 @@ class EmployeePortal:
         except PlaywrightTimeout:
             raise PortalError("invalid_code", 403) from None
         await self.settle()
+        if not await self._authenticated_portal_ready():
+            raise PortalError("session_expired", 403)
         await self.save_session()
         self.mfa_started = None
         return {"profile_id": self.identity, "authenticated": True}
