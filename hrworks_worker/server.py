@@ -32,6 +32,41 @@ WORKER_IDLE_SECONDS = 1800
 RELEASE_TIMEOUT_SECONDS = 15
 
 
+def _resolve_browser_daemon_secret() -> str | None:
+    """Read browser-daemon cluster secret if available."""
+    secret = os.environ.get("BROWSER_DAEMON_SECRET")
+    if secret:
+        return secret.strip()
+    secret_files = [
+        os.environ.get("BROWSER_DAEMON_SECRET_FILE"),
+        "/run/secrets/browser-daemon/passkey-helper-secret",
+        "/run/secrets/browser-daemon/cluster-secret",
+    ]
+    for path in secret_files:
+        if path and os.path.exists(path):
+            try:
+                with open(path) as f:
+                    val = f.read().strip()
+                if val:
+                    return val
+            except OSError:
+                continue
+    return None
+
+
+def _authenticated_cdp_url(url: str) -> str:
+    """Ensure cdp_url includes authentication if connecting to browser-daemon."""
+    parts = urlsplit(url)
+    query = parse_qs(parts.query)
+    if "auth" in query:
+        return url
+    secret = _resolve_browser_daemon_secret()
+    if secret:
+        sep = "&" if parts.query else "?"
+        return f"{url}{sep}auth={secret}"
+    return url
+
+
 class Worker:
     def __init__(
         self,
@@ -41,9 +76,9 @@ class Worker:
         backend: str = "cdp",
         steel_api_url: str = "http://127.0.0.1:3002",
     ) -> None:
-        self.cdp_url = cdp_url
+        self.cdp_url = _authenticated_cdp_url(cdp_url)
         # browser-daemon persistent profile (`?profile=<name>`): reuse its login.
-        self.shared_profile = "profile" in parse_qs(urlsplit(cdp_url).query)
+        self.shared_profile = "profile" in parse_qs(urlsplit(self.cdp_url).query)
         self.state_dir = state_dir or Path.home() / ".local/state/hrworks-worker"
         self.enable_writes = enable_writes
         self.backend = backend
@@ -128,9 +163,17 @@ class Worker:
         """The browser-daemon's tab list (its `/json/list` names each tab's session)."""
         parts = urlsplit(self.cdp_url)
         scheme = "https" if parts.scheme in {"wss", "https"} else "http"
-        with urlopen(f"{scheme}://{parts.netloc}/json/list", timeout=3) as response:
-            tabs = json.load(response)
-        return tabs if isinstance(tabs, list) else []
+        query = parse_qs(parts.query)
+        auth = query.get("auth", [None])[0]
+        url = f"{scheme}://{parts.netloc}/json/list"
+        if auth:
+            url = f"{url}?auth={auth}"
+        try:
+            with urlopen(url, timeout=3) as response:
+                tabs = json.load(response)
+            return tabs if isinstance(tabs, list) else []
+        except Exception:
+            return []
 
     async def _browser_session_id(self, portal: EmployeePortal) -> str | None:
         """The session of the browser this connection got (browser-daemon: its session id)."""

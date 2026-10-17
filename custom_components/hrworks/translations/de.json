@@ -231,7 +231,18 @@
     },
     "worker_unavailable": {
       "title": "Browser-Worker nicht erreichbar",
-      "description": "SSH oder Chromium für {name} ist nicht erreichbar. Verbindung, Worker-Paket und Browser prüfen. Nach Wiederherstellung werden Updates automatisch fortgesetzt."
+      "description": "SSH oder Chromium für {name} ist nicht erreichbar. Verbindung, Worker-Paket und Browser prüfen. Nach Wiederherstellung werden Updates automatisch fortgesetzt.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "HR WORKS neu laden",
+            "description": "Lade die Integration neu, um den Browser-Worker neu zu starten und die Verbindung wiederherzustellen."
+          }
+        },
+        "abort": {
+          "entry_removed": "Der Integrationseintrag wurde entfernt."
+        }
+      }
     },
     "portal_changed": {
       "title": "HR WORKS-Portal prüfen",

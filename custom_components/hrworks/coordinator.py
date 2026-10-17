@@ -32,6 +32,7 @@ from .workdays import days_to_read, overview, prune
 
 LOGGER = logging.getLogger(__name__)
 TRANSIENT_ERRORS = {"browser_unavailable", "cannot_connect"}
+AUTO_RELOAD_COOLDOWN = 300
 RETRY_INTERVAL = timedelta(seconds=60)
 DAY_READS_TIMEOUT = 120
 
@@ -50,7 +51,7 @@ def create_issue(hass, entry, key: str) -> None:
         hass,
         DOMAIN,
         f"{entry.entry_id}_{key}",
-        is_fixable=key in {"session_expired", "write_uncertain"},
+        is_fixable=key in {"session_expired", "write_uncertain", "worker_unavailable"},
         severity=ir.IssueSeverity.WARNING,
         translation_key=key,
         translation_placeholders={"name": entry.title},
@@ -157,11 +158,41 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                     else "worker_unavailable"
                 )
             )
-            create_issue(self.hass, self.entry, key)
+            if key == "worker_unavailable":
+                domain_data = getattr(self.hass, "data", None)
+                reloads = (
+                    domain_data.setdefault(DOMAIN, {})
+                    if isinstance(domain_data, dict)
+                    else getattr(self, "_reloads", {})
+                )
+                self._reloads = reloads
+                entry_id = getattr(self.entry, "entry_id", "default")
+                reload_key = f"{entry_id}_last_auto_reload"
+                last_reload = reloads.get(reload_key, 0)
+                now = time.monotonic()
+                if not isinstance(last_reload, (int, float)):
+                    last_reload = 0
+                if now - last_reload > AUTO_RELOAD_COOLDOWN:
+                    reloads[reload_key] = now
+                    LOGGER.warning(
+                        "HR WORKS worker unavailable (%s); scheduling automatic integration reload to recover",
+                        err.code,
+                    )
+                    self.hass.config_entries.async_schedule_reload(entry_id)
+                else:
+                    create_issue(self.hass, self.entry, key)
+            else:
+                create_issue(self.hass, self.entry, key)
             raise UpdateFailed(err.code) from err
         self.last_error = None
         self.consecutive_failures = 0
         self.update_interval = self._normal_update_interval
+        entry_id = getattr(self.entry, "entry_id", "default")
+        domain_data = getattr(self.hass, "data", None)
+        if isinstance(domain_data, dict) and DOMAIN in domain_data:
+            domain_data[DOMAIN].pop(f"{entry_id}_last_auto_reload", None)
+        if hasattr(self, "_reloads"):
+            self._reloads.pop(f"{entry_id}_last_auto_reload", None)
         clear_issues(self.hass, self.entry)
         data["work_days"] = await self._work_days(data)
         return data

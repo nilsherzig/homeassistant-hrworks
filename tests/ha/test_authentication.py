@@ -12,7 +12,7 @@ from custom_components.hrworks.api import WorkerClient, WorkerError
 from custom_components.hrworks.auth import secret_settings
 from custom_components.hrworks.config_flow import HrworksConfigFlow, account_schema
 from custom_components.hrworks.coordinator import HrworksCoordinator
-from custom_components.hrworks.repairs import EmployeeLoginRepair
+from custom_components.hrworks.repairs import EmployeeLoginRepair, WorkerUnavailableRepair
 from custom_components.hrworks.totp import InvalidTotp
 
 URI = "otpauth://totp/Example:test?secret=JBSWY3DPEHPK3PXP"
@@ -122,6 +122,18 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repair.settings["totp_uri"], URI)
         repair._finish.assert_awaited_once_with(entry)
 
+    async def test_worker_unavailable_repair_reloads_entry(self):
+        entry = SimpleNamespace(data=DATA, entry_id="test-entry")
+        repair = WorkerUnavailableRepair("test-entry")
+        repair.hass = MagicMock()
+        repair.hass.config_entries.async_get_entry.return_value = entry
+        repair.hass.config_entries.async_reload = AsyncMock()
+        form = await repair.async_step_init()
+        self.assertEqual(form["step_id"], "confirm")
+        result = await repair.async_step_confirm({})
+        self.assertEqual(result["type"], "create_entry")
+        repair.hass.config_entries.async_reload.assert_awaited_once_with("test-entry")
+
     def coordinator(self, uri=True):
         coordinator = object.__new__(HrworksCoordinator)
         coordinator.entry = SimpleNamespace(
@@ -194,13 +206,22 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
                 await coordinator._async_update_data()
         self.assertEqual(coordinator.client.snapshot.await_count, 2)
         self.assertEqual(coordinator.update_interval, timedelta(seconds=60))
+        coordinator.hass.config_entries.async_schedule_reload.assert_called_once()
+        issue.assert_not_called()
+
+        # While within cooldown, subsequent failure raises the worker_unavailable repair issue
+        with patch("custom_components.hrworks.coordinator.create_issue") as issue:
+            with self.assertRaises(UpdateFailed):
+                await coordinator._async_update_data()
         self.assertEqual(issue.call_args.args[-1], "worker_unavailable")
+
         coordinator.client.snapshot.side_effect = None
         coordinator.client.snapshot.return_value = {"metrics": {}}
-        with patch("custom_components.hrworks.coordinator.clear_issues"):
+        with patch("custom_components.hrworks.coordinator.clear_issues") as clear:
             await coordinator._async_update_data()
         self.assertEqual(coordinator.update_interval, timedelta(minutes=15))
         self.assertIsNone(coordinator.last_error)
+        clear.assert_called_once()
 
     async def test_replacement_worker_can_reauthenticate(self):
         coordinator = self.coordinator()
