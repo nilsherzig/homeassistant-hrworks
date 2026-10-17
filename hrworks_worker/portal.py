@@ -164,24 +164,15 @@ class EmployeePortal:
         if self.page is not None and not self.page.is_closed():
             return self.page
         if self.context is None:
-            if self.shared:
-                # CDP attaches to the browser-daemon's persistent profile. Reuse
-                # its default context so cookies survive worker reconnects; a
-                # newly-created context is isolated and starts unauthenticated.
-                contexts = self.browser.contexts
-                if not contexts:
-                    raise PortalError("browser_unavailable", 503)
-                self.context = contexts[0]
-            else:
-                seed = self.state_path.exists() and not fresh
-                self.context = await self.browser.new_context(
-                    storage_state=str(self.state_path) if seed else None,
-                    locale="en-GB",
-                    timezone_id="Europe/Berlin",
-                    viewport=VIEWPORT,
-                    accept_downloads=False,
-                    service_workers="block",
-                )
+            seed = self.state_path.exists() and not fresh and not self.shared
+            self.context = await self.browser.new_context(
+                storage_state=str(self.state_path) if seed else None,
+                locale="en-GB",
+                timezone_id="Europe/Berlin",
+                viewport=VIEWPORT,
+                accept_downloads=False,
+                service_workers="block",
+            )
         if fresh and self.shared:
             await self.forget()
         self.page = await self.context.new_page()
