@@ -51,11 +51,20 @@ BALANCES = {"monthly_balance", "total_balance"}
 
 
 class PortalError(Exception):
-    """Only fixed, non-sensitive error codes cross the worker boundary."""
+    """Only fixed, non-sensitive error diagnostics cross the worker boundary."""
 
-    def __init__(self, code: str, status: int = 400) -> None:
+    def __init__(
+        self,
+        code: str,
+        status: int = 400,
+        *,
+        stage: str | None = None,
+        detail: str | None = None,
+    ) -> None:
         self.code = code
         self.status = status
+        self.stage = stage
+        self.detail = detail
         super().__init__(code)
 
 

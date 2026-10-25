@@ -27,13 +27,24 @@ ERRORS = {
     "busy",
     "invalid_request",
 }
+ERROR_STAGES = {"browser_connect", "browser_operation"}
+ERROR_DETAILS = {
+    "connection_failed",
+    "http_401",
+    "http_403",
+    "http_429",
+    "http_5xx",
+    "timeout",
+}
 
 
 class WorkerError(Exception):
     """Fixed error codes only; never employee data, stderr, or credentials."""
 
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, stage: str | None = None, detail: str | None = None):
         self.code = code
+        self.stage = stage
+        self.detail = detail
         super().__init__(code)
 
 
@@ -72,8 +83,18 @@ class Transport(ABC):
                         raise WorkerError("incompatible_worker")
                     if "error" in body:
                         code = body["error"]
+                        stage = body.get("stage")
+                        detail = body.get("detail")
                         raise WorkerError(
-                            code if isinstance(code, str) and code in ERRORS else "cannot_connect"
+                            code if isinstance(code, str) and code in ERRORS else "cannot_connect",
+                            stage=(
+                                stage if isinstance(stage, str) and stage in ERROR_STAGES else None
+                            ),
+                            detail=(
+                                detail
+                                if isinstance(detail, str) and detail in ERROR_DETAILS
+                                else None
+                            ),
                         )
                     return body
             except (asyncssh.Error, OSError, TimeoutError, UnicodeError):

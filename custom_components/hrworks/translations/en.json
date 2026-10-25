@@ -148,6 +148,15 @@
       "last_error": {
         "name": "Last error"
       },
+      "last_attempt": {
+        "name": "Last update attempt"
+      },
+      "last_error_stage": {
+        "name": "Last error stage"
+      },
+      "last_error_detail": {
+        "name": "Last error detail"
+      },
       "consecutive_failures": {
         "name": "Consecutive failures"
       },

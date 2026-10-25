@@ -67,6 +67,21 @@ def _authenticated_cdp_url(url: str) -> str:
     return url
 
 
+def _browser_error_detail(error: Exception) -> str:
+    """Classify browser errors without returning the exception or its URL."""
+    message = str(error).lower()
+    match = re.search(r"status\s+(\d{3})", message)
+    if match:
+        status = int(match.group(1))
+        if status in {401, 403, 429}:
+            return f"http_{status}"
+        if 500 <= status <= 599:
+            return "http_5xx"
+    if "timeout" in message:
+        return "timeout"
+    return "connection_failed"
+
+
 class Worker:
     def __init__(
         self,
@@ -150,9 +165,14 @@ class Worker:
             self.browser = await self.playwright.chromium.connect_over_cdp(
                 endpoint, no_defaults=True, timeout=15000
             )
-        except PlaywrightError:
+        except PlaywrightError as err:
             await self._release_steel_session()
-            raise
+            raise PortalError(
+                "browser_unavailable",
+                503,
+                stage="browser_connect",
+                detail=_browser_error_detail(err),
+            ) from None
         self.connect_seconds = round(time.monotonic() - started, 2)
         self.connections += 1
         for portal in self.profiles.values():
@@ -379,10 +399,20 @@ async def serve(worker: Worker) -> None:
                     result = await worker.dispatch(message["path"], message.get("payload"))
             except PortalError as err:
                 result = {"error": err.code}
+                if err.stage:
+                    result["stage"] = err.stage
+                if err.detail:
+                    result["detail"] = err.detail
             except (ValueError, TypeError):
                 result = {"error": "invalid_request"}
-            except (PlaywrightError, TimeoutError):
-                result = {"error": "browser_unavailable"}
+            except (PlaywrightError, TimeoutError) as err:
+                result = {
+                    "error": "browser_unavailable",
+                    "stage": "browser_operation",
+                    "detail": (
+                        "timeout" if isinstance(err, TimeoutError) else _browser_error_detail(err)
+                    ),
+                }
             except Exception:
                 LOGGER.error("Worker operation failed; portal content omitted")
                 result = {"error": "portal_changed"}

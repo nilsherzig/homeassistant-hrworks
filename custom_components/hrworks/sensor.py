@@ -111,6 +111,25 @@ DIAGNOSTIC_DESCRIPTIONS = (
         key="last_error", translation_key="last_error", icon="mdi:alert-circle-outline", **TEXT
     ),
     SensorEntityDescription(
+        key="last_attempt",
+        translation_key="last_attempt",
+        icon="mdi:clock-alert-outline",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        **TEXT,
+    ),
+    SensorEntityDescription(
+        key="last_error_stage",
+        translation_key="last_error_stage",
+        icon="mdi:debug-step-over",
+        **TEXT,
+    ),
+    SensorEntityDescription(
+        key="last_error_detail",
+        translation_key="last_error_detail",
+        icon="mdi:information-outline",
+        **TEXT,
+    ),
+    SensorEntityDescription(
         key="consecutive_failures",
         translation_key="consecutive_failures",
         icon="mdi:numeric-negative-1",
@@ -146,6 +165,9 @@ ALWAYS_AVAILABLE = {
     "update_duration",
     "next_update",
     "last_error",
+    "last_attempt",
+    "last_error_stage",
+    "last_error_detail",
     "consecutive_failures",
     "update_count",
     "failed_updates",
@@ -243,6 +265,14 @@ class HrworksSensor(HrworksEntity, SensorEntity):
                 return report.get("browser_version")
             case "last_error":
                 return coordinator.last_error or "none"
+            case "last_attempt":
+                return coordinator.last_attempt
+            case "last_error_stage":
+                return coordinator.last_error_stage or "none"
+            case "last_error_detail":
+                return coordinator.last_error_detail or (
+                    "not_reported" if coordinator.last_error else "none"
+                )
             case "consecutive_failures":
                 return coordinator.consecutive_failures
             case "update_count":
@@ -288,5 +318,28 @@ class HrworksSensor(HrworksEntity, SensorEntity):
                 if report.get(source) is not None
             }
         if key == "last_error":
-            return {"last_update_success": self.coordinator.last_update_success}
+            return {
+                "last_update_success": self.coordinator.last_update_success,
+                "stage": self.coordinator.last_error_stage,
+                "detail": self.coordinator.last_error_detail,
+            }
+        if key == "last_error_stage":
+            descriptions = {
+                "browser_connect": "Opening the remote Chromium DevTools connection",
+                "browser_operation": "Using the browser after connecting",
+                "worker_transport": "Connecting to or starting the SSH worker",
+                "worker_response": "The worker returned an error without a more specific stage",
+            }
+            return {"description": descriptions.get(self.native_value, "No error stage reported")}
+        if key == "last_error_detail":
+            descriptions = {
+                "http_401": "The browser endpoint rejected authentication",
+                "http_403": "The browser endpoint denied the connection",
+                "http_429": "The browser endpoint rate limited the connection",
+                "http_5xx": "The browser endpoint returned a server error",
+                "timeout": "The operation timed out",
+                "connection_failed": "The browser connection failed without an HTTP status",
+                "not_reported": "The worker version returned only an error code",
+            }
+            return {"description": descriptions.get(self.native_value, "No detail reported")}
         return {}

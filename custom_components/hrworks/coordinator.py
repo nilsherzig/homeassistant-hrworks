@@ -80,6 +80,9 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
         self.entry = entry
         self.client = client
         self.last_error: str | None = None
+        self.last_error_stage: str | None = None
+        self.last_error_detail: str | None = None
+        self.last_attempt: datetime | None = None
         self._days_store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.days")
         self._days: dict | None = None
         # Operational counters for the diagnostic sensors (kept while HA runs).
@@ -108,6 +111,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
 
     async def _async_update_data(self) -> dict:
         started = time.monotonic()
+        self.last_attempt = dt_util.utcnow()
         self.update_count += 1
         try:
             return await self._update()
@@ -149,6 +153,12 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                     await asyncio.sleep(delay)
         except WorkerError as err:
             self.last_error = err.code
+            self.last_error_stage = err.stage or (
+                "worker_transport"
+                if err.code in {"cannot_connect", "worker_auth", "ssh_host_key"}
+                else "worker_response"
+            )
+            self.last_error_detail = err.detail
             self.update_interval = (
                 min(self._normal_update_interval, RETRY_INTERVAL)
                 if err.code in TRANSIENT_ERRORS
@@ -195,6 +205,8 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                 create_issue(self.hass, self.entry, key)
             raise UpdateFailed(err.code) from err
         self.last_error = None
+        self.last_error_stage = None
+        self.last_error_detail = None
         self.consecutive_failures = 0
         self.update_interval = self._normal_update_interval
         entry_id = getattr(self.entry, "entry_id", "default")
