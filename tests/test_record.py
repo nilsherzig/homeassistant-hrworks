@@ -17,8 +17,12 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
         self.portal.working_day = AsyncMock(return_value=({}, []))
         self.day = (datetime.now(BERLIN) - timedelta(days=2)).date().isoformat()
         self.data = {
-            "start": f"{self.day}T08:00:00+02:00",
-            "end": f"{self.day}T12:00:00+02:00",
+            "start": datetime.fromisoformat(f"{self.day}T08:00:00")
+            .replace(tzinfo=BERLIN)
+            .isoformat(),
+            "end": datetime.fromisoformat(f"{self.day}T12:00:00")
+            .replace(tzinfo=BERLIN)
+            .isoformat(),
             "dry_run": True,
         }
 
@@ -47,6 +51,23 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
             [{"start": "11:59", "end": "17:00", "type": "Working time"}],
         )
         await self.assert_error(self.data, "overlap")
+
+    async def test_overlap_detection_in_winter_and_summer(self):
+        for day in ("2025-01-15", "2025-07-15"):
+            with self.subTest(day=day):
+                start = datetime.fromisoformat(f"{day}T08:00:00").replace(tzinfo=BERLIN)
+                end = datetime.fromisoformat(f"{day}T12:00:00").replace(tzinfo=BERLIN)
+                data = {"start": start.isoformat(), "end": end.isoformat(), "dry_run": True}
+                self.portal.working_day.return_value = (
+                    {},
+                    [{"start": "11:59", "end": "17:00", "type": "Working time"}],
+                )
+                await self.assert_error(data, "overlap")
+                self.portal.working_day.return_value = (
+                    {},
+                    [{"start": "12:00", "end": "17:00", "type": "Working time"}],
+                )
+                self.assertFalse((await self.portal.record(data))["saved"])
 
     async def test_open_existing_interval_is_rejected(self):
         self.portal.working_day.return_value = (
@@ -81,11 +102,14 @@ class RecordTests(unittest.IsolatedAsyncioTestCase):
         cases = [
             {"start": "not a timestamp"},
             {"start": f"{self.day}T08:00:00"},
-            {"start": f"{self.day}T12:00:00+02:00"},
-            {"end": f"{self.day}T07:59:00+02:00"},
-            {"start": f"{self.day}T08:00:01+02:00"},
-            {"start": f"{tomorrow}T08:00:00+02:00", "end": f"{tomorrow}T12:00:00+02:00"},
-            {"end": f"{self.day}T00:00:00+02:00"},
+            {"start": self.data["end"]},
+            {"end": self.data["start"].replace("T08:00:00", "T07:59:00")},
+            {"start": self.data["start"].replace("T08:00:00", "T08:00:01")},
+            {
+                "start": self.data["start"].replace(self.day, tomorrow),
+                "end": self.data["end"].replace(self.day, tomorrow),
+            },
+            {"end": self.data["end"].replace("T12:00:00", "T00:00:00")},
             {"type": "unknown"},
             {"comment": "x" * 501},
         ]
