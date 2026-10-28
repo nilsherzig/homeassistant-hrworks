@@ -35,5 +35,5 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.15'
-      - run: pip install homeassistant==2026.9.4 asyncssh
+      - run: pip install homeassistant==2026.10.4 asyncssh
       - run: python -m unittest discover -s tests/ha -v
