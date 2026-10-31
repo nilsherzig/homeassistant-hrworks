@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from hrworks.models import TYPE_LABELS
 from playwright.async_api import Browser, BrowserContext, Page
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeout
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -305,6 +306,15 @@ class EmployeePortal:
         await self.settle()
         await page.locator("input[name=login]").fill(username)
         await page.locator("input[type=password]").fill(password)
+        # A lasting login: later requests skip the form.
+        keep = page.get_by_role(
+            "checkbox", name=re.compile(r"Keep me logged in|Angemeldet bleiben")
+        )
+        if await keep.count():
+            try:
+                await keep.first.check()
+            except PlaywrightError:
+                pass
         await page.get_by_role("button", name=re.compile(r"Log in to HR WORKS|Anmelden")).click()
         try:
             await page.wait_for_function(

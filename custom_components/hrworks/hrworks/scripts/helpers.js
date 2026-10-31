@@ -111,7 +111,16 @@ async function settle(page) {
       busy: (window.jQuery?.active || 0) > 0,
       shimmer: [...document.querySelectorAll('.hrw-loadingShimmer')]
         .some(e => e.checkVisibility() && !e.closest('.me-data-list-group')),
-    }));
+    })).catch(err => {
+      // The portal still redirects (e.g. the login page to the dashboard): not settled yet.
+      if (/Execution context was destroyed|navigat/i.test(err.message)) return null;
+      throw err;
+    });
+    if (!state) {
+      stable = 0;
+      previous = null;
+      continue;
+    }
     stable = state.text === previous && !state.busy ? stable + 1 : 0;
     previous = state.text;
     if (stable >= 4 && !state.shimmer) return;
@@ -167,6 +176,9 @@ async function login(page, context, { company, username, password, force }) {
   await settle(page);
   await page.locator('input[name=login]').fill(username);
   await page.locator('input[type=password]').fill(password);
+  // A lasting login: later runs (and a recovery after an expired session) skip the form.
+  const keep = page.getByRole('checkbox', { name: /Keep me logged in|Angemeldet bleiben/ });
+  if (await keep.count()) await keep.first().check().catch(() => {});
   await page.getByRole('button', { name: /Log in to HR WORKS|Anmelden/ }).click();
   try {
     await page.waitForFunction("location.pathname !== '/'", undefined, { timeout: 15000 });
