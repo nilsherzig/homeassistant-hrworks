@@ -15,8 +15,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
-from .api import WorkerClient
-from .const import DOMAIN, PLATFORMS
+from .api import create_client
+from .const import CONF_WRITES, DOMAIN, PLATFORMS
 from .coordinator import HrworksCoordinator, clear_issues, create_issue
 from .services import register_services
 
@@ -74,7 +74,7 @@ async def _async_register_card(hass: HomeAssistant, url: str) -> None:
 async def async_setup_entry(hass: HomeAssistant, entry: HrworksConfigEntry) -> bool:
     if ir.async_get(hass).async_get_issue(DOMAIN, f"{entry.entry_id}_write_uncertain"):
         create_issue(hass, entry, "write_uncertain")
-    client = WorkerClient(hass, entry.data)
+    client = create_client(hass, entry.data, allow_writes=entry.options.get(CONF_WRITES, False))
     coordinator = HrworksCoordinator(hass, entry, client)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

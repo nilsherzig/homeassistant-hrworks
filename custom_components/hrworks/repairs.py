@@ -5,7 +5,7 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers import issue_registry as ir
 
-from .api import WorkerClient, WorkerError
+from .api import WorkerError, create_client
 from .auth import complete_mfa, secret_settings
 from .config_flow import account_schema, mfa_schema
 from .const import CONF_COMPANY, CONF_TOTP_URI, DOMAIN
@@ -35,7 +35,7 @@ class EmployeeLoginRepair(RepairsFlow):
                 else:
                     if self.client:
                         await self.client.close()
-                    self.client = WorkerClient(self.hass, entry.data)
+                    self.client = create_client(self.hass, entry.data)
                     settings = secret_settings(entry.data, user_input)
                     password = user_input.get(CONF_PASSWORD) or entry.data[CONF_PASSWORD]
                     result = await self.client.login(

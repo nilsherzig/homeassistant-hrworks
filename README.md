@@ -19,7 +19,53 @@ One service device per employee. English and German translations. Numeric hours 
 graphs and calculations, with a readable `formatted` attribute such as `-1:30`.
 Different employees can have their own entries, worker sessions and settings.
 
-## How it works
+## Backends
+
+Home Assistant reaches the portal in one of two ways. Pick one when you add the
+integration; **Reconfigure** keeps an entry on its backend.
+
+| | browser-daemon (recommended) | SSH worker |
+| --- | --- | --- |
+| Runs the portal logic | on the browser-daemon node, as Playwright scripts (`custom_components/hrworks/hrworks/scripts/*.js`) | in `hrworks_worker` (Python Playwright) on a browser host |
+| Needs on the browser host | browser-daemon with runs enabled (`--run-node`) | the worker package, SSH access |
+| HA installs | `browser-daemon-client` (only `aiohttp`) | `asyncssh` |
+| Browser login | kept by a browser-daemon profile | the worker's state directory, or a profile via `?profile=` |
+
+```mermaid
+flowchart LR
+    HA[Home Assistant] -->|HTTPS · POST /api/run| BD[browser-daemon node]
+    BD -->|Playwright script in the profile's browser| HR[HR WORKS]
+```
+
+### browser-daemon backend
+
+Enter the URL of any node of the mesh, the cluster secret and the name of a browser
+profile (default `hrworks`). The cluster secret is stored in the config entry; it can
+start runs, so treat it like the employee password. Runs for a profile go to the node
+that has it.
+
+- Create the profile once in browser-daemon; the integration signs in to it with the
+  saved employee login and TOTP URI and the profile's browser keeps the session. Do not
+  share that profile with other uses: a forced login clears its `hrworks.de` cookies.
+- Every operation (login, time account, leave and sickness lists, one day, snapshot,
+  record) is one run with its own tab. Credentials and one-time codes travel in the
+  run's `args` only; they are not part of the script and the daemon does not log them.
+- A login which waits for a TOTP code leaves its tab open (`keep_open`); the code is
+  entered in that tab and the tab is closed afterwards. An abandoned challenge expires
+  after 10 minutes; the next login closes its tab.
+- Working-time entries follow the same rules as with the SSH worker: previews by
+  default, and a real write only with **Allow working-time submissions** enabled. A write
+  which may have reached the portal (timeout, connection loss) is never replayed and
+  raises the *uncertain write* repair.
+- Day history reads open the page again for every day (the SSH worker could reuse its
+  tab), so they are slower.
+- Without a profile, runs use a throwaway browser and no login survives, so the form
+  requires one.
+
+Tests exercise the backend against a fake daemon (`tests/test_browser_daemon.py`);
+put `browser-daemon-client` on `PYTHONPATH` to run them.
+
+## How it works (SSH worker)
 
 ```mermaid
 flowchart LR

@@ -18,7 +18,8 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/pschmitt/homeassistant-hrworks/issues",
   "requirements": [
-    "asyncssh>=2.14.2"
+    "asyncssh>=2.14.2",
+    "browser-daemon-client==0.1.0"
   ],
   "version": "8.1.1"
 }

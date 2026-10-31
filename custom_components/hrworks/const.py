@@ -5,6 +5,12 @@ from homeassistant.const import Platform
 DOMAIN = "hrworks"
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.BUTTON]
 CONF_COMPANY = "company_id"
+CONF_BACKEND = "backend"
+BACKEND_SSH = "ssh"
+BACKEND_BROWSER_DAEMON = "browser_daemon"
+CONF_BD_URL = "browser_daemon_url"
+CONF_BD_SECRET = "browser_daemon_secret"
+CONF_BD_PROFILE = "browser_daemon_profile"
 CONF_SSH_HOST = "ssh_host"
 CONF_SSH_PORT = "ssh_port"
 CONF_SSH_USERNAME = "ssh_username"

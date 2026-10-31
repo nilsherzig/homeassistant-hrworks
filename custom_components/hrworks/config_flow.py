@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_NAME, CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_USERNAME
@@ -18,9 +20,15 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .api import WorkerClient, WorkerError
+from .api import WorkerClient, WorkerError, create_client
 from .auth import complete_mfa, secret_settings
 from .const import (
+    BACKEND_BROWSER_DAEMON,
+    BACKEND_SSH,
+    CONF_BACKEND,
+    CONF_BD_PROFILE,
+    CONF_BD_SECRET,
+    CONF_BD_URL,
     CONF_CODE,
     CONF_COMPANY,
     CONF_FUTURE_DAYS,
@@ -72,6 +80,23 @@ def connection_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
     )
 
 
+def browser_daemon_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
+    """The browser-daemon node and its profile. The cluster secret is never prefilled."""
+    secret = vol.Optional(CONF_BD_SECRET) if existing else vol.Required(CONF_BD_SECRET)
+    return vol.Schema(
+        {
+            vol.Required(CONF_BD_URL, default=defaults.get(CONF_BD_URL, "")): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.URL)
+            ),
+            secret: PASSWORD,
+            vol.Required(
+                CONF_BD_PROFILE, default=defaults.get(CONF_BD_PROFILE, "hrworks")
+            ): TextSelector(),
+            vol.Optional(CONF_NAME, default=defaults.get(CONF_NAME, "HR WORKS")): TextSelector(),
+        }
+    )
+
+
 def account_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
     password = vol.Optional(CONF_PASSWORD) if existing else vol.Required(CONF_PASSWORD)
     return vol.Schema(
@@ -105,6 +130,7 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
         self._client: WorkerClient | None = None
         self._entry: ConfigEntry | None = None
         self._mfa_pending = False
+        self._backend = BACKEND_SSH
 
     @staticmethod
     @callback
@@ -112,40 +138,72 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
         return HrworksOptionsFlow()
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
-        return await self._connection_step("user", user_input)
+        return self.async_show_menu(step_id="user", menu_options=[BACKEND_BROWSER_DAEMON, "ssh"])
+
+    async def async_step_browser_daemon(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._backend = BACKEND_BROWSER_DAEMON
+        return await self._connection_step("browser_daemon", user_input)
+
+    async def async_step_ssh(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._backend = BACKEND_SSH
+        return await self._connection_step("ssh", user_input)
 
     async def async_step_reconfigure(self, user_input: dict | None = None) -> ConfigFlowResult:
         self._entry = self._get_reconfigure_entry()
         if not self._data:
             self._data = dict(self._entry.data)
             self._title = self._entry.title
-        return await self._connection_step("reconfigure", user_input)
+        self._backend = self._data.get(CONF_BACKEND, BACKEND_SSH)
+        return await self._connection_step(
+            "reconfigure_browser_daemon"
+            if self._backend == BACKEND_BROWSER_DAEMON
+            else "reconfigure",
+            user_input,
+        )
+
+    async def async_step_reconfigure_browser_daemon(
+        self, user_input: dict | None = None
+    ) -> ConfigFlowResult:
+        return await self.async_step_reconfigure(user_input)
 
     async def async_step_reauth(self, entry_data: dict) -> ConfigFlowResult:
         self._entry = self._get_reauth_entry()
         self._data = dict(self._entry.data)
         self._title = self._entry.title
-        self._client = WorkerClient(self.hass, self._data)
+        self._backend = self._data.get(CONF_BACKEND, BACKEND_SSH)
+        self._client = create_client(self.hass, self._data)
         return await self.async_step_account()
 
     async def _connection_step(self, step: str, user_input: dict | None) -> ConfigFlowResult:
         errors = {}
+        bd = self._backend == BACKEND_BROWSER_DAEMON
         if user_input is not None:
             client = None
             try:
                 settings = {key: value for key, value in user_input.items() if key != CONF_NAME}
-                if not all(
-                    str(settings.get(key, "")).strip()
-                    for key in (
+                if bd:
+                    # A blank secret keeps the saved one (reconfigure).
+                    settings[CONF_BD_SECRET] = settings.get(CONF_BD_SECRET) or self._data.get(
+                        CONF_BD_SECRET
+                    )
+                    settings[CONF_BACKEND] = BACKEND_BROWSER_DAEMON
+                    required = (CONF_BD_URL, CONF_BD_SECRET, CONF_BD_PROFILE)
+                    if urlsplit(str(settings.get(CONF_BD_URL, "")).strip()).scheme not in {
+                        "http",
+                        "https",
+                    }:
+                        raise WorkerError("invalid_request")
+                else:
+                    required = (
                         CONF_SSH_HOST,
                         CONF_SSH_USERNAME,
                         CONF_SSH_KEY_PATH,
                         CONF_SSH_KNOWN_HOSTS,
                         CONF_WORKER_COMMAND,
                     )
-                ):
+                if not all(str(settings.get(key) or "").strip() for key in required):
                     raise WorkerError("invalid_request")
-                client = WorkerClient(self.hass, settings)
+                client = create_client(self.hass, settings)
                 await client.health()
             except ValueError:
                 if client:
@@ -162,9 +220,10 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._data.update(settings)
                 self._title = user_input.get(CONF_NAME) or self._title
                 return await self.async_step_account()
+        schema = browser_daemon_schema if bd else connection_schema
         return self.async_show_form(
             step_id=step,
-            data_schema=connection_schema(
+            data_schema=schema(
                 {**self._data, CONF_NAME: self._title}, existing=self._entry is not None
             ),
             errors=errors,

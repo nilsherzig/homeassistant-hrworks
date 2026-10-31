@@ -3,16 +3,11 @@
   "config": {
     "step": {
       "user": {
-        "title": "Browser über SSH verbinden",
-        "description": "Der Worker läuft auf dem SSH-Host und verbindet sich dort mit Chromium. Ein geprüfter Hostschlüssel und eine Schlüsseldatei in Home Assistant sind erforderlich. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
-        "data": {
-          "ssh_host": "SSH-Host",
-          "ssh_port": "SSH-Port",
-          "ssh_username": "SSH-Benutzername",
-          "ssh_key_path": "SSH-Schlüsseldatei in Home Assistant",
-          "ssh_known_hosts": "SSH-known_hosts-Eintrag",
-          "worker_command": "Worker-Befehl auf dem SSH-Host",
-          "name": "Gerätename"
+        "title": "Verbindung zum Browser wählen",
+        "description": "browser-daemon führt die Portal-Skripte selbst aus und braucht nur seine URL und das Cluster-Geheimnis. Der SSH-Worker startet über SSH einen Playwright-Prozess auf einem Browser-Host.",
+        "menu_options": {
+          "browser_daemon": "browser-daemon (empfohlen)",
+          "ssh": "SSH-Worker"
         }
       },
       "reconfigure": {
@@ -28,6 +23,16 @@
           "name": "Gerätename"
         }
       },
+      "reconfigure_browser_daemon": {
+        "title": "browser-daemon verbinden",
+        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. Nutze die URL eines beliebigen Knotens und das Cluster-Geheimnis. Das Profil behält die Mitarbeiteranmeldung; melde dich nur über diese Integration darin an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "data": {
+          "browser_daemon_url": "browser-daemon-URL",
+          "browser_daemon_secret": "Cluster-Geheimnis",
+          "browser_daemon_profile": "Browser-Profil",
+          "name": "Gerätename"
+        }
+      },
       "account": {
         "title": "Dein Mitarbeiterkonto",
         "description": "Verwende deinen Mitarbeiter-Login. In der Neukonfiguration können Firma, Benutzer und Passwort geändert werden. Leere Geheimnisfelder behalten den gespeicherten Wert. Eine gespeicherte TOTP-URI wird automatisch verwendet; gib bei Bedarf hier einen sechsstelligen Code ein.",
@@ -39,12 +44,35 @@
           "clear_totp": "Gespeicherte TOTP-URI entfernen",
           "code": "Authenticator-Code (optional)"
         }
+      },
+      "ssh": {
+        "title": "Browser über SSH verbinden",
+        "description": "Der Worker läuft auf dem SSH-Host und verbindet sich dort mit Chromium. Ein geprüfter Hostschlüssel und eine Schlüsseldatei in Home Assistant sind erforderlich. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "data": {
+          "ssh_host": "SSH-Host",
+          "ssh_port": "SSH-Port",
+          "ssh_username": "SSH-Benutzername",
+          "ssh_key_path": "SSH-Schlüsseldatei in Home Assistant",
+          "ssh_known_hosts": "SSH-known_hosts-Eintrag",
+          "worker_command": "Worker-Befehl auf dem SSH-Host",
+          "name": "Gerätename"
+        }
+      },
+      "browser_daemon": {
+        "title": "browser-daemon verbinden",
+        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. Nutze die URL eines beliebigen Knotens und das Cluster-Geheimnis. Das Profil behält die Mitarbeiteranmeldung; melde dich nur über diese Integration darin an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "data": {
+          "browser_daemon_url": "browser-daemon-URL",
+          "browser_daemon_secret": "Cluster-Geheimnis",
+          "browser_daemon_profile": "Browser-Profil",
+          "name": "Gerätename"
+        }
       }
     },
     "error": {
-      "worker_auth": "SSH-Anmeldung fehlgeschlagen. Benutzer und Schlüsseldatei prüfen.",
-      "cannot_connect": "SSH-Host oder Worker nicht erreichbar. SSH-Verbindung und Nix-Paket prüfen.",
-      "browser_unavailable": "Der Worker erreicht seinen Browser nicht. Prüfe den Browser-Dienst.",
+      "worker_auth": "Anmeldung fehlgeschlagen. SSH-Benutzer und Schlüsseldatei oder das Cluster-Geheimnis von browser-daemon prüfen.",
+      "cannot_connect": "SSH-Host, Worker oder browser-daemon nicht erreichbar. Verbindung prüfen.",
+      "browser_unavailable": "Der Worker erreicht seinen Browser nicht. Prüfe den Browser-Dienst, den Profilnamen in browser-daemon und ob Runs auf dem Knoten aktiviert sind.",
       "incompatible_worker": "Das Worker-Protokoll ist inkompatibel. Aktualisiere Integration und Worker zusammen.",
       "invalid_auth": "Die Anmeldung ist fehlgeschlagen. Prüfe Firmenkennung, Benutzerkennung und Passwort.",
       "invalid_code": "Der Authenticator-Code wurde abgelehnt oder die Anmeldung ist abgelaufen. Versuche einen neuen Code oder starte die Anmeldung erneut.",
@@ -72,7 +100,7 @@
     "step": {
       "init": {
         "title": "Einstellungen für Mitarbeiterdaten",
-        "description": "Wähle Kalenderzeitraum und Aktualisierungsintervall. Arbeitszeiteinträge müssen hier und beim Worker erlaubt sein. Vorschauen sind immer verfügbar.",
+        "description": "Wähle Kalenderzeitraum und Aktualisierungsintervall. Arbeitszeiteinträge müssen hier und, beim SSH-Worker, auch beim Worker erlaubt sein. Vorschauen sind immer verfügbar.",
         "data": {
           "scan_interval": "Aktualisierungsintervall (Sekunden)",
           "calendar_past_days": "Kalenderhistorie (Tage)",
@@ -205,9 +233,9 @@
           }
         },
         "error": {
-          "worker_auth": "SSH-Anmeldung fehlgeschlagen. Benutzer und Schlüsseldatei prüfen.",
-          "cannot_connect": "SSH-Host oder Worker nicht erreichbar. SSH-Verbindung und Nix-Paket prüfen.",
-          "browser_unavailable": "Der Worker erreicht seinen Browser nicht. Prüfe den Browser-Dienst.",
+          "worker_auth": "Anmeldung fehlgeschlagen. SSH-Benutzer und Schlüsseldatei oder das Cluster-Geheimnis von browser-daemon prüfen.",
+          "cannot_connect": "SSH-Host, Worker oder browser-daemon nicht erreichbar. Verbindung prüfen.",
+          "browser_unavailable": "Der Worker erreicht seinen Browser nicht. Prüfe den Browser-Dienst, den Profilnamen in browser-daemon und ob Runs auf dem Knoten aktiviert sind.",
           "incompatible_worker": "Das Worker-Protokoll ist inkompatibel. Aktualisiere Integration und Worker zusammen.",
           "invalid_auth": "Die Anmeldung ist fehlgeschlagen. Prüfe Firmenkennung, Benutzerkennung und Passwort.",
           "invalid_code": "Der Authenticator-Code wurde abgelehnt oder die Anmeldung ist abgelaufen. Versuche einen neuen Code oder starte die Anmeldung erneut.",
