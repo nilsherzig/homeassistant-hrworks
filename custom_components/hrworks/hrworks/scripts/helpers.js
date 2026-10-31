@@ -155,6 +155,18 @@ async function navigate(page, route, reuse = false) {
   return page;
 }
 
+/** Where a portal address really ends up: the portal redirects to its login page only
+ *  after loading, so the address right after `goto` says nothing yet. */
+async function landed(page) {
+  const portal = page.locator('.m-portlet:visible').first();
+  await Promise.race([
+    page.waitForURL(url => url.hostname.startsWith('login.'), { timeout: 30000 }).catch(() => {}),
+    portal.waitFor({ state: 'visible', timeout: 30000 }).catch(() => {}),
+  ]);
+  if (onLoginPage(page)) return 'login';
+  return page.url().includes('/o/') && await portal.count() ? 'portal' : 'other';
+}
+
 async function forgetLogin(context) {
   await context.clearCookies({ domain: HRWORKS_COOKIES });
 }
@@ -162,7 +174,7 @@ async function forgetLogin(context) {
 async function login(page, context, { company, username, password, force }) {
   if (force) await forgetLogin(context);
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
-  if (page.url().includes('/o/')) {
+  if (await landed(page) === 'portal') {
     await settle(page);
     return { authenticated: true };
   }
@@ -170,6 +182,7 @@ async function login(page, context, { company, username, password, force }) {
     // An expired session may retain cookies which interfere with a new login.
     await forgetLogin(context);
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+    await landed(page);
   }
   await page.locator('input[name=company]').fill(company);
   await page.locator('input[name=company]').press('Tab');
@@ -181,7 +194,7 @@ async function login(page, context, { company, username, password, force }) {
   if (await keep.count()) await keep.first().check().catch(() => {});
   await page.getByRole('button', { name: /Log in to HR WORKS|Anmelden/ }).click();
   try {
-    await page.waitForFunction("location.pathname !== '/'", undefined, { timeout: 15000 });
+    await page.waitForURL(url => url.pathname !== '/', { timeout: 15000 });
   } catch (err) {
     if (isTimeout(err)) throw new PortalError('login_timeout');
     throw err;
