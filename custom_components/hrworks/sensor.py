@@ -336,8 +336,8 @@ class HrworksSensor(HrworksEntity, SensorEntity):
             descriptions = {
                 "browser_connect": "Opening the remote Chromium DevTools connection",
                 "browser_operation": "Using the browser after connecting",
-                "worker_transport": "Connecting to or starting the SSH worker",
-                "worker_response": "The worker returned an error without a more specific stage",
+                "worker_transport": "Reaching browser-daemon",
+                "worker_response": "The portal run failed without a more specific stage",
             }
             return {"description": descriptions.get(self.native_value, "No error stage reported")}
         if key == "last_error_detail":
@@ -348,7 +348,6 @@ class HrworksSensor(HrworksEntity, SensorEntity):
                 "http_5xx": "The browser endpoint returned a server error",
                 "timeout": "The operation timed out",
                 "connection_failed": "The browser connection failed without an HTTP status",
-                "not_reported": "The worker version returned only an error code",
             }
             return {"description": descriptions.get(self.native_value, "No detail reported")}
         return {}

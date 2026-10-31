@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hrworks.api import WorkerClient, WorkerError
+from custom_components.hrworks.api import WorkerError
 from custom_components.hrworks.auth import secret_settings
 from custom_components.hrworks.config_flow import HrworksConfigFlow, account_schema
 from custom_components.hrworks.coordinator import HrworksCoordinator
@@ -317,33 +317,6 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reason"], "already_configured")
         flow.hass.config_entries.async_update_entry.assert_not_called()
 
-    async def test_old_worker_cannot_silently_reuse_session(self):
-        client = WorkerClient(MagicMock(), {})
-        client.request = AsyncMock(return_value={"protocol_version": 1})
-        with self.assertRaises(WorkerError) as error:
-            await client.login("example", "employee", "new-password", force=True)
-        self.assertEqual(error.exception.code, "incompatible_worker")
-        client.request.assert_awaited_once_with("health")
-
-    async def test_only_credentials_not_totp_seed_cross_ssh(self):
-        client = WorkerClient(MagicMock(), {"totp_uri": URI})
-        client.request = AsyncMock(
-            side_effect=[
-                {"protocol_version": 1, "capabilities": ["fresh_login"]},
-                {"profile_id": "a" * 64},
-            ]
-        )
-        await client.login("example", "employee", "password", force=True)
-        client.request.assert_awaited_with(
-            "login",
-            {
-                "company_id": "example",
-                "username": "employee",
-                "password": "password",
-                "force": True,
-            },
-        )
-
     async def test_unchanged_reconfigure_reloads_fresh_session(self):
         flow = self.flow("reconfigure")
         del flow._finish
@@ -374,27 +347,3 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
         flow.async_update_and_abort = MagicMock(return_value={"type": "done"})
         await flow._finish()
         flow.hass.config_entries.async_schedule_reload.assert_called_once_with("entry-id")
-
-
-class LifecycleTests(unittest.IsolatedAsyncioTestCase):
-    async def test_close_removes_listener_and_closes_shared_transport(self):
-        remove = MagicMock()
-        hass = MagicMock()
-        hass.bus.async_listen_once.return_value = remove
-        client = WorkerClient(hass, {})
-        client.transport = SimpleNamespace(request=AsyncMock(return_value={}), close=AsyncMock())
-        await client.request("health")
-        await client.request("health")
-        hass.bus.async_listen_once.assert_called_once()
-        await client.close()
-        remove.assert_called_once()
-        client.transport.close.assert_awaited_once()
-
-    async def test_stop_event_does_not_remove_consumed_listener(self):
-        hass = MagicMock()
-        client = WorkerClient(hass, {})
-        client.transport = SimpleNamespace(request=AsyncMock(return_value={}), close=AsyncMock())
-        await client.request("health")
-        await client.close(object())
-        hass.bus.async_listen_once.return_value.assert_not_called()
-        client.transport.close.assert_awaited_once()

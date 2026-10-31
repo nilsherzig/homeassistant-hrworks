@@ -1,6 +1,6 @@
 # HR WORKS integration
 
-- Employee login only. Keep the browser worker separate from Home Assistant.
+- Employee login only. Keep the browser automation in browser-daemon run scripts, separate from Home Assistant.
 - Keep secrets, cookies, portal captures and personal HR data out of git and logs.
 - Never test writes against real working times without explicit instruction.
 - Preserve separate intervals, their types and comments. Never replace overlapping entries.

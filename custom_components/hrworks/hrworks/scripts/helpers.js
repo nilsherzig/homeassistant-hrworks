@@ -1,6 +1,6 @@
 // Shared portal helpers for the HR WORKS run scripts. Python puts this file in front of an
 // operation (login.js, snapshot.js, ...) and passes `H` (the helpers) as its second argument.
-// Port of hrworks_worker/portal.py. Errors the integration understands are thrown as
+// Errors the integration understands are thrown as
 // `hrworks:<code>`; everything else (Playwright timeouts, ...) counts as an unavailable browser.
 
 const LOGIN_URL = 'https://ssl6.hrworks.de/o/dashboard';

@@ -11,12 +11,7 @@ from browser_daemon_client import BrowserDaemonError, RunError, RunResult, RunTi
 from hrworks import browser_daemon
 from hrworks.auth import authenticate, complete_mfa
 from hrworks.browser_daemon import BERLIN, BrowserDaemonClient, profile_id, script
-from hrworks.transport import WorkerError
-
-try:
-    from hrworks_worker.portal import account_metrics, dates, minutes
-except ImportError:  # Playwright's driver is not importable here
-    account_metrics = None
+from hrworks.errors import WorkerError
 
 SETTINGS = {
     "backend": "browser_daemon",
@@ -69,7 +64,7 @@ class LoginTests(unittest.IsolatedAsyncioTestCase):
         self.daemon = FakeDaemon()
         self.client = BrowserDaemonClient(SETTINGS, daemon=self.daemon)
 
-    async def test_identity_matches_the_ssh_worker(self):
+    async def test_identity_is_a_hash_of_company_and_user(self):
         self.daemon.on("login", ok({"authenticated": True}))
         result = await self.client.login(" example ", "Employee", PASSWORD)
         self.assertEqual(result, {"profile_id": IDENTITY, "authenticated": True})
@@ -592,8 +587,7 @@ class ScriptTests(unittest.TestCase):
             with self.subTest(name):
                 self.node(check, script(name))
 
-    @unittest.skipIf(account_metrics is None, "the Python worker needs Playwright")
-    def test_helpers_agree_with_the_python_worker(self):
+    def test_helpers_parse_the_portal_the_way_the_old_worker_did(self):
         rows = [
             ["Target hours", "160:00"],
             ["Recorded hours (Working hours)", "33:44 (33:35)"],
@@ -605,10 +599,16 @@ class ScriptTests(unittest.TestCase):
         ]
         texts = ["12:30", "−0:05", "-7:59 Stunden", "1:75", "abc", "10:00 Hours"]
         expected = {
-            "metrics": account_metrics(rows)[0],
-            "basis": account_metrics(rows)[1],
-            "minutes": [minutes(t) for t in texts],
-            "dates": [d.isoformat() for d in dates("01.02.2026 - 05.03.26")],
+            "metrics": {
+                "monthly_target": 9600,
+                "monthly_worked": 2015,
+                "carryover": 120,
+                "monthly_balance": 65,
+                "total_balance": -180,
+            },
+            "basis": "previous_day",
+            "minutes": [750, -5, -479, None, None, 600],
+            "dates": ["2026-02-01", "2026-03-05"],
         }
         helpers = browser_daemon.HELPERS
         code = (

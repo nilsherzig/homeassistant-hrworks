@@ -13,7 +13,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import WorkerClient, WorkerError
+from .api import WorkerError
 from .auth import authenticate
 from .const import (
     CONF_FUTURE_DAYS,
@@ -40,7 +40,7 @@ LOGIN_RETRY_DELAYS = (60, 300, 900, 1800)
 ISSUES = (
     "session_expired",
     "worker_auth",
-    "ssh_host_key",
+    "reconfigure_required",
     "worker_unavailable",
     "portal_changed",
     "write_uncertain",
@@ -76,7 +76,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
     consecutive_failures: int = 0
     reauthentications: int = 0
 
-    def __init__(self, hass, entry, client: WorkerClient) -> None:
+    def __init__(self, hass, entry, client) -> None:
         self.entry = entry
         self.client = client
         self.last_error: str | None = None
@@ -149,8 +149,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
                         attempt + 2,
                         len(TRANSIENT_RETRY_DELAYS) + 1,
                     )
-                    # The transport discarded the failed worker under its request
-                    # lock. Backoff gives a restarting browser daemon time to return.
+                    # Backoff gives a restarting browser daemon time to return.
                     if err.code == "browser_unavailable":
                         await self._async_recover_browser_session()
                     await asyncio.sleep(delay)
@@ -158,7 +157,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
             self.last_error = err.code
             self.last_error_stage = err.stage or (
                 "worker_transport"
-                if err.code in {"cannot_connect", "worker_auth", "ssh_host_key"}
+                if err.code in {"cannot_connect", "worker_auth"}
                 else "worker_response"
             )
             self.last_error_detail = err.detail
@@ -183,11 +182,7 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
             key = (
                 "portal_changed"
                 if err.code == "portal_changed"
-                else (
-                    err.code
-                    if err.code in {"worker_auth", "ssh_host_key"}
-                    else "worker_unavailable"
-                )
+                else (err.code if err.code == "worker_auth" else "worker_unavailable")
             )
             if key == "worker_unavailable" and err.code in TRANSIENT_ERRORS:
                 domain_data = getattr(self.hass, "data", None)

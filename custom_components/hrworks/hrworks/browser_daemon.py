@@ -1,12 +1,11 @@
 """Read and (optionally) write the employee portal through browser-daemon's run API.
 
-A drop-in alternative to :class:`WorkerClient` and its SSH worker: the portal logic runs as
-Playwright scripts (``scripts/*.js``, ported from ``hrworks_worker/portal.py``) on the
+The portal logic runs as Playwright scripts (``scripts/*.js``) on the
 node that owns a browser-daemon profile, so nothing but ``aiohttp`` is needed here. The
 profile's browser keeps the HR WORKS login; every operation opens its own tab.
 
 Credentials and TOTP codes travel in the run's ``args`` only. Nothing of a run (script,
-args, error text) is logged: errors become the same fixed codes as the SSH worker's.
+args, error text) is logged: errors become fixed codes.
 """
 
 from __future__ import annotations
@@ -24,8 +23,8 @@ from zoneinfo import ZoneInfo
 import aiohttp
 from browser_daemon_client import BrowserDaemon, BrowserDaemonError, RunError, RunTimeout
 
+from .errors import ERRORS, WorkerError
 from .models import TYPE_LABELS
-from .transport import ERRORS, WorkerError
 
 BERLIN = ZoneInfo("Europe/Berlin")
 CLIENT_NAME = "Home Assistant · HR WORKS"
@@ -41,7 +40,7 @@ OPERATIONS = (
     "record",
     "logout",
 )
-# Seconds a run may take, per operation (the SSH worker allowed 160 per request).
+# Seconds a run may take, per operation .
 TIMEOUTS = {"snapshot": 170, "record": 150, "login": 90, "day": 90, "account": 90, "mfa": 60}
 ERROR_CODE = re.compile(r"hrworks:([a-z_]+)")
 SCRIPT_BUGS = ("TypeError", "ReferenceError", "SyntaxError", "RangeError")
@@ -71,7 +70,7 @@ def script(operation: str) -> str:
 
 
 def profile_id(company: str, username: str) -> str:
-    """The employee identity, identical to the SSH worker's (entities keep their IDs)."""
+    """The employee identity, a hash of company and user (entity IDs stay stable)."""
     return hashlib.sha256(f"{company.casefold()}:{username.casefold()}".encode()).hexdigest()
 
 
@@ -107,7 +106,7 @@ def _failure(err: Exception) -> tuple[str, bool, str | None, str | None]:
 
 
 class BrowserDaemonClient:
-    """The :class:`WorkerClient` interface, served by browser-daemon runs."""
+    """Reads and writes the portal through browser-daemon runs."""
 
     def __init__(
         self,
@@ -127,7 +126,7 @@ class BrowserDaemonClient:
         self._daemon = daemon
         self._lock = asyncio.Lock()
         # The portal tab: the HR WORKS login lives in the tab that signed in, so every
-        # operation runs in it (like the SSH worker's persistent page).
+        # operation runs in it (a persistent page).
         self._tab: str | None = None
         self._mfa_started: float | None = None
         self._connections = 0
@@ -228,7 +227,7 @@ class BrowserDaemonClient:
             raise WorkerError("session_expired")
         return self.profile
 
-    # The WorkerClient interface
+    # The client interface used by the coordinator, flows and services
 
     async def health(self) -> dict:
         await self._run("probe")
@@ -398,7 +397,7 @@ class BrowserDaemonClient:
 
 
 def account_result(raw: dict, today: date) -> tuple[dict, dict]:
-    """The worker's ``(metrics, account)`` pair from account.js' answer."""
+    """The ``(metrics, account)`` pair from account.js' answer."""
     period = raw["period"]
     if period is None:
         return dict(raw["metrics"]), {"period": None, "current_month": False}
@@ -464,7 +463,7 @@ def assemble_snapshot(raw: dict, options: dict, today: date, start: date, end: d
 
 
 def record_arguments(data: dict, *, now: datetime) -> dict:
-    """Validate one interval exactly like the worker did, as arguments for record.js."""
+    """Validate one interval, as arguments for record.js."""
     try:
         start = datetime.fromisoformat(data["start"])
         end = datetime.fromisoformat(data["end"])

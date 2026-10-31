@@ -11,12 +11,13 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
-from .api import create_client
-from .const import CONF_WRITES, DOMAIN, PLATFORMS
+from .api import WorkerError, create_client
+from .const import CONF_BD_PROFILE, CONF_WRITES, DOMAIN, LEGACY_KEYS, PLATFORMS
 from .coordinator import HrworksCoordinator, clear_issues, create_issue
 from .services import register_services
 
@@ -71,16 +72,36 @@ async def _async_register_card(hass: HomeAssistant, url: str) -> None:
         await resources.async_update_item(mine[0]["id"], {"res_type": "module", "url": url})
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Version 2 removed the SSH worker: drop its keys from the entry.
+
+    An entry which still used the SSH worker keeps its employee login but has no browser
+    profile; setup then asks for a reconfiguration to browser-daemon.
+    """
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        data = {key: value for key, value in entry.data.items() if key not in LEGACY_KEYS}
+        hass.config_entries.async_update_entry(entry, data=data, version=2, minor_version=1)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: HrworksConfigEntry) -> bool:
+    if not entry.data.get(CONF_BD_PROFILE):
+        create_issue(hass, entry, "reconfigure_required")
+        raise ConfigEntryError(translation_domain=DOMAIN, translation_key="reconfigure_required")
     if ir.async_get(hass).async_get_issue(DOMAIN, f"{entry.entry_id}_write_uncertain"):
         create_issue(hass, entry, "write_uncertain")
-    client = create_client(hass, entry.data, allow_writes=entry.options.get(CONF_WRITES, False))
+    try:
+        client = create_client(hass, entry.data, allow_writes=entry.options.get(CONF_WRITES, False))
+    except WorkerError as err:
+        raise ConfigEntryNotReady(translation_domain=DOMAIN, translation_key=err.code) from err
     coordinator = HrworksCoordinator(hass, entry, client)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_reload))
     register_services(hass)
-    # The first snapshot drives a remote browser worker and can take a minute.
+    # The first snapshot drives a remote browser and can take a minute.
     # Home Assistant's startup waits for every integration's setup, so fetch it
     # in the background; entities stay unavailable until it completes. Auth
     # auth failures create a Repairs issue without blocking startup.

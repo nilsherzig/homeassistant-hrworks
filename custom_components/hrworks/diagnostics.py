@@ -5,7 +5,7 @@ async def async_get_config_entry_diagnostics(hass, config_entry) -> dict:
     coordinator = getattr(config_entry, "runtime_data", None)
     data = coordinator.data if coordinator and coordinator.data else {}
     return {
-        "version": "8",
+        "version": "9",
         "options": dict(config_entry.options),
         "last_error": coordinator.last_error if coordinator else None,
         "last_error_stage": coordinator.last_error_stage if coordinator else None,
@@ -18,7 +18,7 @@ async def async_get_config_entry_diagnostics(hass, config_entry) -> dict:
         "consecutive_failures": coordinator.consecutive_failures if coordinator else 0,
         "reauthentications": coordinator.reauthentications if coordinator else 0,
         "timings": data.get("timings"),
-        "worker": {
+        "browser": {
             k: v for k, v in (data.get("diagnostics") or {}).items() if k != "browser_endpoint"
         },
         "metric_keys": sorted(data.get("metrics", {})),

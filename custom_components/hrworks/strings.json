@@ -3,22 +3,16 @@
   "config": {
     "step": {
       "user": {
-        "title": "Choose how to reach the browser",
-        "description": "browser-daemon runs the portal scripts itself and needs only its URL and cluster secret. The SSH worker starts a Playwright process on a browser host over SSH.",
-        "menu_options": {
-          "browser_daemon": "browser-daemon (recommended)",
-          "ssh": "SSH worker"
+        "title": "Connect browser-daemon",
+        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Leave the URL and cluster secret empty to use the connection of the Browser Daemon integration, or give the URL of any node and the cluster secret. The profile keeps the employee login; the integration signs in to it itself. Blank secret fields keep saved values. Employee login follows in the next step.",
+        "data": {
+          "browser_daemon_url": "browser-daemon URL",
+          "browser_daemon_secret": "Cluster secret",
+          "browser_daemon_profile": "Browser profile",
+          "name": "Device name"
         }
       },
       "reconfigure": {
-        "title": "Change the connection",
-        "description": "Choose how Home Assistant reaches the browser. The employee login is kept and used again.",
-        "menu_options": {
-          "reconfigure_browser_daemon": "browser-daemon (recommended)",
-          "reconfigure_ssh": "SSH worker"
-        }
-      },
-      "reconfigure_browser_daemon": {
         "title": "Connect browser-daemon",
         "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Leave the URL and cluster secret empty to use the connection of the Browser Daemon integration, or give the URL of any node and the cluster secret. The profile keeps the employee login; the integration signs in to it itself. Blank secret fields keep saved values. Employee login follows in the next step.",
         "data": {
@@ -39,61 +33,24 @@
           "clear_totp": "Remove saved TOTP URI",
           "code": "Authenticator code (optional)"
         }
-      },
-      "ssh": {
-        "title": "Connect your browser over SSH",
-        "description": "The worker runs on the SSH host and connects to Chromium there. Provide a verified host key and a private key file available inside Home Assistant. Employee login follows in the next step.",
-        "data": {
-          "ssh_host": "SSH host",
-          "ssh_port": "SSH port",
-          "ssh_username": "SSH username",
-          "ssh_key_path": "SSH private key file in Home Assistant",
-          "ssh_known_hosts": "SSH known_hosts entry",
-          "worker_command": "Remote worker command",
-          "name": "Device name"
-        }
-      },
-      "browser_daemon": {
-        "title": "Connect browser-daemon",
-        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Leave the URL and cluster secret empty to use the connection of the Browser Daemon integration, or give the URL of any node and the cluster secret. The profile keeps the employee login; the integration signs in to it itself. Blank secret fields keep saved values. Employee login follows in the next step.",
-        "data": {
-          "browser_daemon_url": "browser-daemon URL",
-          "browser_daemon_secret": "Cluster secret",
-          "browser_daemon_profile": "Browser profile",
-          "name": "Device name"
-        }
-      },
-      "reconfigure_ssh": {
-        "title": "Connect your browser over SSH",
-        "description": "The worker runs on the SSH host and connects to Chromium there. Provide a verified host key and a private key file available inside Home Assistant. Employee login follows in the next step.",
-        "data": {
-          "ssh_host": "SSH host",
-          "ssh_port": "SSH port",
-          "ssh_username": "SSH username",
-          "ssh_key_path": "SSH private key file in Home Assistant",
-          "ssh_known_hosts": "SSH known_hosts entry",
-          "worker_command": "Remote worker command",
-          "name": "Device name"
-        }
       }
     },
     "error": {
-      "worker_auth": "Authentication failed. Check the SSH username and private key file, or the browser-daemon cluster secret.",
-      "cannot_connect": "Cannot reach the SSH host, worker or browser-daemon. Check the connection.",
-      "browser_unavailable": "The worker cannot reach its browser. Check the browser service, the browser-daemon profile name and that runs are enabled on its node.",
-      "incompatible_worker": "The worker protocol is incompatible. Update the integration and worker together.",
+      "worker_auth": "browser-daemon rejected the cluster secret. Check it.",
+      "cannot_connect": "Cannot reach browser-daemon. Check the URL, the cluster secret or the Browser Daemon integration.",
+      "browser_unavailable": "The browser is unavailable. Check the browser-daemon profile name and that runs are enabled on its node.",
+      "incompatible_worker": "browser-daemon does not serve runs. Enable runs on the node (--run-node).",
       "invalid_auth": "Login failed. Check the company ID, user ID and password.",
       "invalid_code": "The authenticator code was rejected or the challenge expired. Try a fresh code, or restart authentication.",
       "unsupported_mfa": "This login requires an unsupported second factor or interactive challenge. Use an authenticator-enabled employee login.",
       "session_expired": "The employee session expired. Authenticate again.",
       "mfa_required": "Enter a current authenticator code.",
       "different_account": "This entry belongs to a different employee. Add another integration entry for a different account.",
-      "portal_changed": "The portal could not be read reliably. Check for portal changes and update the worker.",
-      "busy": "The browser worker is busy. Try again shortly.",
+      "portal_changed": "The portal could not be read reliably. Check for portal changes and update the integration.",
+      "busy": "The browser is busy. Try again shortly.",
       "not_found": "The employee session was not found. Start authentication again.",
-      "invalid_request": "The worker rejected this request. Update the integration and worker together.",
+      "invalid_request": "The request was rejected. Check the URL, cluster secret and profile.",
       "unknown": "An unexpected error occurred.",
-      "ssh_host_key": "SSH host key verification failed. Verify the host and reconfigure the known_hosts entry.",
       "invalid_totp": "Invalid TOTP URI. Use otpauth://totp/... with a Base32 secret and six digits.",
       "login_timeout": "The HR WORKS login timed out. Check the portal and try again."
     },
@@ -108,7 +65,7 @@
     "step": {
       "init": {
         "title": "Employee data settings",
-        "description": "Choose calendar coverage and update frequency. Working-time submissions require both this option and, for the SSH worker, write support enabled on the worker. Previews always remain available.",
+        "description": "Choose calendar coverage and update frequency. Working-time submissions require this option; previews always remain available.",
         "data": {
           "scan_interval": "Update interval (seconds)",
           "calendar_past_days": "Calendar history (days)",
@@ -168,7 +125,7 @@
         "name": "Update duration"
       },
       "worker_duration": {
-        "name": "Worker duration"
+        "name": "Run duration"
       },
       "browser_connect_duration": {
         "name": "Browser connect duration"
@@ -250,22 +207,21 @@
           }
         },
         "error": {
-          "worker_auth": "Authentication failed. Check the SSH username and private key file, or the browser-daemon cluster secret.",
-          "cannot_connect": "Cannot reach the SSH host, worker or browser-daemon. Check the connection.",
-          "browser_unavailable": "The worker cannot reach its browser. Check the browser service, the browser-daemon profile name and that runs are enabled on its node.",
-          "incompatible_worker": "The worker protocol is incompatible. Update the integration and worker together.",
+          "worker_auth": "browser-daemon rejected the cluster secret. Check it.",
+          "cannot_connect": "Cannot reach browser-daemon. Check the URL, the cluster secret or the Browser Daemon integration.",
+          "browser_unavailable": "The browser is unavailable. Check the browser-daemon profile name and that runs are enabled on its node.",
+          "incompatible_worker": "browser-daemon does not serve runs. Enable runs on the node (--run-node).",
           "invalid_auth": "Login failed. Check the company ID, user ID and password.",
           "invalid_code": "The authenticator code was rejected or the challenge expired. Try a fresh code, or restart authentication.",
           "unsupported_mfa": "This login requires an unsupported second factor or interactive challenge. Use an authenticator-enabled employee login.",
           "session_expired": "The employee session expired. Authenticate again.",
           "mfa_required": "Enter a current authenticator code.",
           "different_account": "This entry belongs to a different employee. Add another integration entry for a different account.",
-          "portal_changed": "The portal could not be read reliably. Check for portal changes and update the worker.",
-          "busy": "The browser worker is busy. Try again shortly.",
+          "portal_changed": "The portal could not be read reliably. Check for portal changes and update the integration.",
+          "busy": "The browser is busy. Try again shortly.",
           "not_found": "The employee session was not found. Start authentication again.",
-          "invalid_request": "The worker rejected this request. Update the integration and worker together.",
+          "invalid_request": "The request was rejected. Check the URL, cluster secret and profile.",
           "unknown": "An unexpected error occurred.",
-          "ssh_host_key": "SSH host key verification failed. Verify the host and reconfigure the known_hosts entry.",
           "invalid_totp": "Invalid TOTP URI. Use otpauth://totp/... with a Base32 secret and six digits.",
           "login_timeout": "The HR WORKS login timed out. Check the portal and try again."
         },
@@ -276,16 +232,16 @@
       }
     },
     "worker_auth": {
-      "title": "SSH authentication needs attention",
-      "description": "SSH authentication for {name} failed. Reconfigure the username and private key file."
+      "title": "browser-daemon access needs attention",
+      "description": "browser-daemon rejected the cluster secret for {name}. Reconfigure the connection."
     },
     "worker_unavailable": {
-      "title": "Browser worker unavailable",
+      "title": "Browser unavailable",
       "fix_flow": {
         "step": {
           "confirm": {
             "title": "Reload HR WORKS",
-            "description": "SSH or Chromium for {name} is unavailable. Reload the integration to restart the browser worker and re-establish the connection."
+            "description": "browser-daemon or its browser for {name} is unavailable. Reload the integration to re-establish the connection."
           }
         },
         "abort": {
@@ -294,8 +250,8 @@
       }
     },
     "portal_changed": {
-      "title": "HR WORKS portal needs attention",
-      "description": "The worker cannot reliably read {name}. Update the worker for the current portal layout. Missing values are unavailable; they are never replaced with zero."
+      "title": "HR WORKS portal changed",
+      "description": "The scripts cannot reliably read {name}. Update the integration for the current portal layout. Missing values are unavailable; they are never replaced with zero."
     },
     "write_uncertain": {
       "title": "Check the working-time submission",
@@ -308,9 +264,9 @@
         }
       }
     },
-    "ssh_host_key": {
-      "title": "Verify the SSH host key",
-      "description": "The SSH host key for {name} could not be verified. Verify the host and update known_hosts through Reconfigure."
+    "reconfigure_required": {
+      "title": "Reconfigure for browser-daemon",
+      "description": "{name} used the SSH worker, which was removed. Open the integration, choose Reconfigure and enter the browser-daemon connection and profile."
     }
   },
   "exceptions": {
@@ -322,6 +278,15 @@
     },
     "record_failed": {
       "message": "Working-time request failed: {reason}."
+    },
+    "reconfigure_required": {
+      "message": "This account used the removed SSH worker. Reconfigure it to use browser-daemon."
+    },
+    "cannot_connect": {
+      "message": "Cannot reach browser-daemon. Check the Browser Daemon integration or the configured URL."
+    },
+    "incompatible_worker": {
+      "message": "browser-daemon does not serve runs."
     }
   },
   "services": {

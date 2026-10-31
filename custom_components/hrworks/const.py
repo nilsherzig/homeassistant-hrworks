@@ -5,18 +5,19 @@ from homeassistant.const import Platform
 DOMAIN = "hrworks"
 PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.BUTTON]
 CONF_COMPANY = "company_id"
-CONF_BACKEND = "backend"
-BACKEND_SSH = "ssh"
-BACKEND_BROWSER_DAEMON = "browser_daemon"
 CONF_BD_URL = "browser_daemon_url"
 CONF_BD_SECRET = "browser_daemon_secret"
 CONF_BD_PROFILE = "browser_daemon_profile"
-CONF_SSH_HOST = "ssh_host"
-CONF_SSH_PORT = "ssh_port"
-CONF_SSH_USERNAME = "ssh_username"
-CONF_SSH_KEY_PATH = "ssh_key_path"
-CONF_SSH_KNOWN_HOSTS = "ssh_known_hosts"
-CONF_WORKER_COMMAND = "worker_command"
+# Keys of the removed SSH worker backend, dropped from old entries on migration.
+LEGACY_KEYS = (
+    "backend",
+    "ssh_host",
+    "ssh_port",
+    "ssh_username",
+    "ssh_key_path",
+    "ssh_known_hosts",
+    "worker_command",
+)
 CONF_PROFILE = "profile_id"
 CONF_CODE = "code"
 CONF_TOTP_URI = "totp_uri"

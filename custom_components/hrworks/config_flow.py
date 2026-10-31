@@ -20,12 +20,9 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .api import WorkerClient, WorkerError, create_client
+from .api import WorkerError, create_client
 from .auth import complete_mfa, secret_settings
 from .const import (
-    BACKEND_BROWSER_DAEMON,
-    BACKEND_SSH,
-    CONF_BACKEND,
     CONF_BD_PROFILE,
     CONF_BD_SECRET,
     CONF_BD_URL,
@@ -36,13 +33,7 @@ from .const import (
     CONF_PENDING,
     CONF_PROFILE,
     CONF_SICKNESS,
-    CONF_SSH_HOST,
-    CONF_SSH_KEY_PATH,
-    CONF_SSH_KNOWN_HOSTS,
-    CONF_SSH_PORT,
-    CONF_SSH_USERNAME,
     CONF_TOTP_URI,
-    CONF_WORKER_COMMAND,
     CONF_WRITES,
     DEFAULT_FUTURE_DAYS,
     DEFAULT_PAST_DAYS,
@@ -54,33 +45,7 @@ from .totp import InvalidTotp
 PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 
-def connection_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
-    """Do not prefill secrets in forms."""
-    return vol.Schema(
-        {
-            vol.Required(CONF_SSH_HOST, default=defaults.get(CONF_SSH_HOST, "")): TextSelector(),
-            vol.Required(CONF_SSH_PORT, default=defaults.get(CONF_SSH_PORT, 22)): vol.All(
-                vol.Coerce(int), vol.Range(min=1, max=65535)
-            ),
-            vol.Required(
-                CONF_SSH_USERNAME, default=defaults.get(CONF_SSH_USERNAME, "")
-            ): TextSelector(),
-            vol.Required(
-                CONF_SSH_KEY_PATH,
-                default=defaults.get(CONF_SSH_KEY_PATH, "/config/.ssh/id_ed25519"),
-            ): TextSelector(),
-            vol.Required(
-                CONF_SSH_KNOWN_HOSTS, default=defaults.get(CONF_SSH_KNOWN_HOSTS, "")
-            ): TextSelector(TextSelectorConfig(multiline=True)),
-            vol.Required(
-                CONF_WORKER_COMMAND, default=defaults.get(CONF_WORKER_COMMAND, "hrworks worker")
-            ): TextSelector(),
-            vol.Optional(CONF_NAME, default=defaults.get(CONF_NAME, "HR WORKS")): TextSelector(),
-        }
-    )
-
-
-def browser_daemon_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
+def connection_schema(defaults: dict) -> vol.Schema:
     """The browser-daemon node and its profile. The cluster secret is never prefilled.
 
     Without a URL, the connection of the Browser Daemon integration is used."""
@@ -121,17 +86,17 @@ def mfa_schema() -> vol.Schema:
 
 
 class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Connect the worker, authenticate the employee, then optionally complete MFA."""
+    """Connect browser-daemon, authenticate the employee, then optionally complete MFA."""
 
-    VERSION = 1
+    VERSION = 2
+    MINOR_VERSION = 1
 
     def __init__(self) -> None:
         self._data: dict = {}
         self._title = "HR WORKS"
-        self._client: WorkerClient | None = None
+        self._client = None
         self._entry: ConfigEntry | None = None
         self._mfa_pending = False
-        self._backend = BACKEND_SSH
 
     @staticmethod
     @callback
@@ -139,76 +104,41 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
         return HrworksOptionsFlow()
 
     async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="user", menu_options=[BACKEND_BROWSER_DAEMON, "ssh"])
-
-    async def async_step_browser_daemon(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self._backend = BACKEND_BROWSER_DAEMON
-        return await self._connection_step("browser_daemon", user_input)
-
-    async def async_step_ssh(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self._backend = BACKEND_SSH
-        return await self._connection_step("ssh", user_input)
+        return await self._connection_step("user", user_input)
 
     async def async_step_reconfigure(self, user_input: dict | None = None) -> ConfigFlowResult:
-        """Either backend, keeping the employee login (blank secrets keep saved values)."""
         self._entry = self._get_reconfigure_entry()
         if not self._data:
             self._data = dict(self._entry.data)
             self._title = self._entry.title
-        return self.async_show_menu(
-            step_id="reconfigure",
-            menu_options=["reconfigure_browser_daemon", "reconfigure_ssh"],
-        )
-
-    async def async_step_reconfigure_browser_daemon(
-        self, user_input: dict | None = None
-    ) -> ConfigFlowResult:
-        self._backend = BACKEND_BROWSER_DAEMON
-        return await self._connection_step("reconfigure_browser_daemon", user_input)
-
-    async def async_step_reconfigure_ssh(self, user_input: dict | None = None) -> ConfigFlowResult:
-        self._backend = BACKEND_SSH
-        return await self._connection_step("reconfigure_ssh", user_input)
+        return await self._connection_step("reconfigure", user_input)
 
     async def async_step_reauth(self, entry_data: dict) -> ConfigFlowResult:
         self._entry = self._get_reauth_entry()
         self._data = dict(self._entry.data)
         self._title = self._entry.title
-        self._backend = self._data.get(CONF_BACKEND, BACKEND_SSH)
         self._client = create_client(self.hass, self._data)
         return await self.async_step_account()
 
     async def _connection_step(self, step: str, user_input: dict | None) -> ConfigFlowResult:
         errors = {}
-        bd = self._backend == BACKEND_BROWSER_DAEMON
         if user_input is not None:
             client = None
             try:
                 settings = {key: value for key, value in user_input.items() if key != CONF_NAME}
-                if bd:
-                    settings[CONF_BACKEND] = BACKEND_BROWSER_DAEMON
-                    settings[CONF_BD_URL] = str(settings.get(CONF_BD_URL) or "").strip()
-                    required = (CONF_BD_PROFILE,)
-                    if settings[CONF_BD_URL]:
-                        # A blank secret keeps the saved one (reconfigure).
-                        settings[CONF_BD_SECRET] = settings.get(CONF_BD_SECRET) or self._data.get(
-                            CONF_BD_SECRET
-                        )
-                        required += (CONF_BD_SECRET,)
-                        if urlsplit(settings[CONF_BD_URL]).scheme not in {"http", "https"}:
-                            raise WorkerError("invalid_request")
-                    else:
-                        # The Browser Daemon integration's connection: nothing to keep here.
-                        settings[CONF_BD_SECRET] = None
-                else:
-                    settings[CONF_BACKEND] = BACKEND_SSH
-                    required = (
-                        CONF_SSH_HOST,
-                        CONF_SSH_USERNAME,
-                        CONF_SSH_KEY_PATH,
-                        CONF_SSH_KNOWN_HOSTS,
-                        CONF_WORKER_COMMAND,
+                settings[CONF_BD_URL] = str(settings.get(CONF_BD_URL) or "").strip()
+                required = (CONF_BD_PROFILE,)
+                if settings[CONF_BD_URL]:
+                    # A blank secret keeps the saved one (reconfigure).
+                    settings[CONF_BD_SECRET] = settings.get(CONF_BD_SECRET) or self._data.get(
+                        CONF_BD_SECRET
                     )
+                    required += (CONF_BD_SECRET,)
+                    if urlsplit(settings[CONF_BD_URL]).scheme not in {"http", "https"}:
+                        raise WorkerError("invalid_request")
+                else:
+                    # The Browser Daemon integration's connection: nothing to keep here.
+                    settings[CONF_BD_SECRET] = None
                 if not all(str(settings.get(key) or "").strip() for key in required):
                     raise WorkerError("invalid_request")
                 client = create_client(self.hass, settings)
@@ -225,19 +155,12 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
                 if self._client:
                     await self._client.close()
                 self._client = client
-                if not bd:
-                    # Switching back: do not keep a cluster secret the entry no longer uses.
-                    for key in (CONF_BD_URL, CONF_BD_SECRET, CONF_BD_PROFILE):
-                        self._data.pop(key, None)
                 self._data.update(settings)
                 self._title = user_input.get(CONF_NAME) or self._title
                 return await self.async_step_account()
-        schema = browser_daemon_schema if bd else connection_schema
         return self.async_show_form(
             step_id=step,
-            data_schema=schema(
-                {**self._data, CONF_NAME: self._title}, existing=self._entry is not None
-            ),
+            data_schema=connection_schema({**self._data, CONF_NAME: self._title}),
             errors=errors,
         )
 
