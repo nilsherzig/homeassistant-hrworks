@@ -81,14 +81,15 @@ def connection_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
 
 
 def browser_daemon_schema(defaults: dict, *, existing: bool = False) -> vol.Schema:
-    """The browser-daemon node and its profile. The cluster secret is never prefilled."""
-    secret = vol.Optional(CONF_BD_SECRET) if existing else vol.Required(CONF_BD_SECRET)
+    """The browser-daemon node and its profile. The cluster secret is never prefilled.
+
+    Without a URL, the connection of the Browser Daemon integration is used."""
     return vol.Schema(
         {
-            vol.Required(CONF_BD_URL, default=defaults.get(CONF_BD_URL, "")): TextSelector(
+            vol.Optional(CONF_BD_URL, default=defaults.get(CONF_BD_URL) or ""): TextSelector(
                 TextSelectorConfig(type=TextSelectorType.URL)
             ),
-            secret: PASSWORD,
+            vol.Optional(CONF_BD_SECRET): PASSWORD,
             vol.Required(
                 CONF_BD_PROFILE, default=defaults.get(CONF_BD_PROFILE, "hrworks")
             ): TextSelector(),
@@ -149,22 +150,25 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
         return await self._connection_step("ssh", user_input)
 
     async def async_step_reconfigure(self, user_input: dict | None = None) -> ConfigFlowResult:
+        """Either backend, keeping the employee login (blank secrets keep saved values)."""
         self._entry = self._get_reconfigure_entry()
         if not self._data:
             self._data = dict(self._entry.data)
             self._title = self._entry.title
-        self._backend = self._data.get(CONF_BACKEND, BACKEND_SSH)
-        return await self._connection_step(
-            "reconfigure_browser_daemon"
-            if self._backend == BACKEND_BROWSER_DAEMON
-            else "reconfigure",
-            user_input,
+        return self.async_show_menu(
+            step_id="reconfigure",
+            menu_options=["reconfigure_browser_daemon", "reconfigure_ssh"],
         )
 
     async def async_step_reconfigure_browser_daemon(
         self, user_input: dict | None = None
     ) -> ConfigFlowResult:
-        return await self.async_step_reconfigure(user_input)
+        self._backend = BACKEND_BROWSER_DAEMON
+        return await self._connection_step("reconfigure_browser_daemon", user_input)
+
+    async def async_step_reconfigure_ssh(self, user_input: dict | None = None) -> ConfigFlowResult:
+        self._backend = BACKEND_SSH
+        return await self._connection_step("reconfigure_ssh", user_input)
 
     async def async_step_reauth(self, entry_data: dict) -> ConfigFlowResult:
         self._entry = self._get_reauth_entry()
@@ -182,18 +186,22 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
             try:
                 settings = {key: value for key, value in user_input.items() if key != CONF_NAME}
                 if bd:
-                    # A blank secret keeps the saved one (reconfigure).
-                    settings[CONF_BD_SECRET] = settings.get(CONF_BD_SECRET) or self._data.get(
-                        CONF_BD_SECRET
-                    )
                     settings[CONF_BACKEND] = BACKEND_BROWSER_DAEMON
-                    required = (CONF_BD_URL, CONF_BD_SECRET, CONF_BD_PROFILE)
-                    if urlsplit(str(settings.get(CONF_BD_URL, "")).strip()).scheme not in {
-                        "http",
-                        "https",
-                    }:
-                        raise WorkerError("invalid_request")
+                    settings[CONF_BD_URL] = str(settings.get(CONF_BD_URL) or "").strip()
+                    required = (CONF_BD_PROFILE,)
+                    if settings[CONF_BD_URL]:
+                        # A blank secret keeps the saved one (reconfigure).
+                        settings[CONF_BD_SECRET] = settings.get(CONF_BD_SECRET) or self._data.get(
+                            CONF_BD_SECRET
+                        )
+                        required += (CONF_BD_SECRET,)
+                        if urlsplit(settings[CONF_BD_URL]).scheme not in {"http", "https"}:
+                            raise WorkerError("invalid_request")
+                    else:
+                        # The Browser Daemon integration's connection: nothing to keep here.
+                        settings[CONF_BD_SECRET] = None
                 else:
+                    settings[CONF_BACKEND] = BACKEND_SSH
                     required = (
                         CONF_SSH_HOST,
                         CONF_SSH_USERNAME,
@@ -217,6 +225,10 @@ class HrworksConfigFlow(ConfigFlow, domain=DOMAIN):
                 if self._client:
                     await self._client.close()
                 self._client = client
+                if not bd:
+                    # Switching back: do not keep a cluster secret the entry no longer uses.
+                    for key in (CONF_BD_URL, CONF_BD_SECRET, CONF_BD_PROFILE):
+                        self._data.pop(key, None)
                 self._data.update(settings)
                 self._title = user_input.get(CONF_NAME) or self._title
                 return await self.async_step_account()

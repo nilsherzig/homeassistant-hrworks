@@ -3,7 +3,7 @@
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import BACKEND_BROWSER_DAEMON, CONF_BACKEND
+from .const import BACKEND_BROWSER_DAEMON, CONF_BACKEND, CONF_BD_SECRET, CONF_BD_URL
 from .hrworks.client import WorkerClient as SharedWorkerClient
 from .hrworks.transport import WorkerError
 
@@ -38,12 +38,27 @@ class WorkerClient(SharedWorkerClient):
         await super().close()
 
 
+def shared_browser_daemon(hass) -> dict:
+    """The URL and cluster secret of the Browser Daemon integration, never stored here."""
+    try:
+        from custom_components.browser_daemon import async_get_client
+    except ImportError as err:
+        raise WorkerError("cannot_connect") from err
+    client = async_get_client(hass)
+    url = getattr(client, "base_url", None)
+    if not url:
+        raise WorkerError("cannot_connect")
+    return {CONF_BD_URL: url, CONF_BD_SECRET: getattr(client, "cluster_secret", None)}
+
+
 def create_client(hass, settings: dict, *, allow_writes: bool = False):
     """The client of the entry's backend: browser-daemon runs, or the SSH worker."""
     if settings.get(CONF_BACKEND) != BACKEND_BROWSER_DAEMON:
         return WorkerClient(hass, settings)
     if BrowserDaemonClient is None:
         raise WorkerError("incompatible_worker")
+    if not settings.get(CONF_BD_URL):
+        settings = {**settings, **shared_browser_daemon(hass)}
     return BrowserDaemonClient(
         settings, http=async_get_clientsession(hass), allow_writes=allow_writes
     )

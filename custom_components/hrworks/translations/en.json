@@ -11,21 +11,16 @@
         }
       },
       "reconfigure": {
-        "title": "Connect your browser over SSH",
-        "description": "The worker runs on the SSH host and connects to Chromium there. Provide a verified host key and a private key file available inside Home Assistant. Employee login follows in the next step.",
-        "data": {
-          "ssh_host": "SSH host",
-          "ssh_port": "SSH port",
-          "ssh_username": "SSH username",
-          "ssh_key_path": "SSH private key file in Home Assistant",
-          "ssh_known_hosts": "SSH known_hosts entry",
-          "worker_command": "Remote worker command",
-          "name": "Device name"
+        "title": "Change the connection",
+        "description": "Choose how Home Assistant reaches the browser. The employee login is kept and used again.",
+        "menu_options": {
+          "reconfigure_browser_daemon": "browser-daemon (recommended)",
+          "reconfigure_ssh": "SSH worker"
         }
       },
       "reconfigure_browser_daemon": {
         "title": "Connect browser-daemon",
-        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Use the URL of any node and the cluster secret. The profile keeps the employee login; sign in to it only through this integration. Blank secret fields keep saved values. Employee login follows in the next step.",
+        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Leave the URL and cluster secret empty to use the connection of the Browser Daemon integration, or give the URL of any node and the cluster secret. The profile keeps the employee login; the integration signs in to it itself. Blank secret fields keep saved values. Employee login follows in the next step.",
         "data": {
           "browser_daemon_url": "browser-daemon URL",
           "browser_daemon_secret": "Cluster secret",
@@ -60,11 +55,24 @@
       },
       "browser_daemon": {
         "title": "Connect browser-daemon",
-        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Use the URL of any node and the cluster secret. The profile keeps the employee login; sign in to it only through this integration. Blank secret fields keep saved values. Employee login follows in the next step.",
+        "description": "Home Assistant runs the HR WORKS scripts through the browser-daemon run API. Leave the URL and cluster secret empty to use the connection of the Browser Daemon integration, or give the URL of any node and the cluster secret. The profile keeps the employee login; the integration signs in to it itself. Blank secret fields keep saved values. Employee login follows in the next step.",
         "data": {
           "browser_daemon_url": "browser-daemon URL",
           "browser_daemon_secret": "Cluster secret",
           "browser_daemon_profile": "Browser profile",
+          "name": "Device name"
+        }
+      },
+      "reconfigure_ssh": {
+        "title": "Connect your browser over SSH",
+        "description": "The worker runs on the SSH host and connects to Chromium there. Provide a verified host key and a private key file available inside Home Assistant. Employee login follows in the next step.",
+        "data": {
+          "ssh_host": "SSH host",
+          "ssh_port": "SSH port",
+          "ssh_username": "SSH username",
+          "ssh_key_path": "SSH private key file in Home Assistant",
+          "ssh_known_hosts": "SSH known_hosts entry",
+          "worker_command": "Remote worker command",
           "name": "Device name"
         }
       }

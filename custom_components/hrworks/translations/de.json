@@ -11,21 +11,16 @@
         }
       },
       "reconfigure": {
-        "title": "Browser über SSH verbinden",
-        "description": "Der Worker läuft auf dem SSH-Host und verbindet sich dort mit Chromium. Ein geprüfter Hostschlüssel und eine Schlüsseldatei in Home Assistant sind erforderlich. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
-        "data": {
-          "ssh_host": "SSH-Host",
-          "ssh_port": "SSH-Port",
-          "ssh_username": "SSH-Benutzername",
-          "ssh_key_path": "SSH-Schlüsseldatei in Home Assistant",
-          "ssh_known_hosts": "SSH-known_hosts-Eintrag",
-          "worker_command": "Worker-Befehl auf dem SSH-Host",
-          "name": "Gerätename"
+        "title": "Verbindung ändern",
+        "description": "Wähle, wie Home Assistant den Browser erreicht. Die Mitarbeiteranmeldung bleibt erhalten und wird erneut verwendet.",
+        "menu_options": {
+          "reconfigure_browser_daemon": "browser-daemon (empfohlen)",
+          "reconfigure_ssh": "SSH-Worker"
         }
       },
       "reconfigure_browser_daemon": {
         "title": "browser-daemon verbinden",
-        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. Nutze die URL eines beliebigen Knotens und das Cluster-Geheimnis. Das Profil behält die Mitarbeiteranmeldung; melde dich nur über diese Integration darin an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. URL und Cluster-Secret leer lassen, um die Verbindung der Browser-Daemon-Integration zu verwenden, oder die URL eines beliebigen Knotens und das Cluster-Secret angeben. Das Profil behält die Mitarbeiteranmeldung; die Integration meldet sich selbst an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
         "data": {
           "browser_daemon_url": "browser-daemon-URL",
           "browser_daemon_secret": "Cluster-Geheimnis",
@@ -60,11 +55,24 @@
       },
       "browser_daemon": {
         "title": "browser-daemon verbinden",
-        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. Nutze die URL eines beliebigen Knotens und das Cluster-Geheimnis. Das Profil behält die Mitarbeiteranmeldung; melde dich nur über diese Integration darin an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "description": "Home Assistant führt die HR-WORKS-Skripte über die Run-API von browser-daemon aus. URL und Cluster-Secret leer lassen, um die Verbindung der Browser-Daemon-Integration zu verwenden, oder die URL eines beliebigen Knotens und das Cluster-Secret angeben. Das Profil behält die Mitarbeiteranmeldung; die Integration meldet sich selbst an. Leere Geheimnisfelder behalten gespeicherte Werte. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
         "data": {
           "browser_daemon_url": "browser-daemon-URL",
           "browser_daemon_secret": "Cluster-Geheimnis",
           "browser_daemon_profile": "Browser-Profil",
+          "name": "Gerätename"
+        }
+      },
+      "reconfigure_ssh": {
+        "title": "Browser über SSH verbinden",
+        "description": "Der Worker läuft auf dem SSH-Host und verbindet sich dort mit Chromium. Ein geprüfter Hostschlüssel und eine Schlüsseldatei in Home Assistant sind erforderlich. Die Mitarbeiteranmeldung folgt im nächsten Schritt.",
+        "data": {
+          "ssh_host": "SSH-Host",
+          "ssh_port": "SSH-Port",
+          "ssh_username": "SSH-Benutzername",
+          "ssh_key_path": "SSH-Schlüsseldatei in Home Assistant",
+          "ssh_known_hosts": "SSH-known_hosts-Eintrag",
+          "worker_command": "Worker-Befehl auf dem SSH-Host",
           "name": "Gerätename"
         }
       }
