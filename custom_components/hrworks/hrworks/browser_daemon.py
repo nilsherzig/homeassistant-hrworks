@@ -126,7 +126,9 @@ class BrowserDaemonClient:
         self._owns_http = False
         self._daemon = daemon
         self._lock = asyncio.Lock()
-        self._mfa_tab: str | None = None
+        # The portal tab: the HR WORKS login lives in the tab that signed in, so every
+        # operation runs in it (like the SSH worker's persistent page).
+        self._tab: str | None = None
         self._mfa_started: float | None = None
         self._connections = 0
 
@@ -150,7 +152,7 @@ class BrowserDaemonClient:
 
     async def close(self) -> None:
         self.capabilities = None
-        await self._drop_mfa_tab()
+        # The portal tab stays open on purpose: it holds the login.
         if self._owns_http and self._http is not None:
             await self._http.close()
             self._http = self._daemon = None
@@ -162,13 +164,32 @@ class BrowserDaemonClient:
     async def __aexit__(self, *_exc):
         await self.close()
 
-    async def _drop_mfa_tab(self) -> None:
-        tab, self._mfa_tab, self._mfa_started = self._mfa_tab, None, None
+    async def _close_tab(self) -> None:
+        tab, self._tab, self._mfa_started = self._tab, None, None
         if tab:
             try:
                 await self._client().close_tab(tab)
             except (BrowserDaemonError, WorkerError):
                 pass
+
+    async def _adopt_tab(self) -> None:
+        """After a restart of Home Assistant: take over the portal tab the profile still has."""
+        if not self.browser_profile:
+            return
+        try:
+            client = self._client()
+            found = await client.find_profile(self.browser_profile)
+            session = (found or {}).get("session_id")
+            if not session:
+                return
+            for tab in await client.tabs(node=(found or {}).get("node_name")):
+                if (tab.get("sessionId") or tab.get("session_id")) != session:
+                    continue
+                if tab.get("type", "page") == "page" and "hrworks.de" in str(tab.get("url", "")):
+                    self._tab = tab.get("id")
+                    return
+        except (BrowserDaemonError, WorkerError, AttributeError, TypeError):
+            pass
 
     async def _run(
         self, operation: str, args: dict | None = None, *, write: bool = False, **options: Any
@@ -177,6 +198,10 @@ class BrowserDaemonClient:
         target = {"profile": self.browser_profile} if self.browser_profile else {}
         async with self._lock:
             self._connections += 1
+            if self._tab is None and operation not in {"probe", "login", "logout"}:
+                await self._adopt_tab()
+            if self._tab and operation not in {"probe", "logout"}:
+                options = {**options, "tab": self._tab, "keep_open": True}
             try:
                 res = await self._client().run(
                     script=script(operation),
@@ -185,7 +210,13 @@ class BrowserDaemonClient:
                     **target,
                     **options,
                 )
+                if options.get("keep_open") and res.page:
+                    self._tab = res.page
             except (BrowserDaemonError, aiohttp.ClientError, TimeoutError) as err:
+                if isinstance(err, RunError) and "not found in the session" in (
+                    err.run.error or ""
+                ):
+                    self._tab = self._mfa_started = None
                 code, uncertain, stage, detail = _failure(err)
                 raise WorkerError(
                     "write_uncertain" if write and uncertain else code, stage=stage, detail=detail
@@ -215,26 +246,38 @@ class BrowserDaemonClient:
         if any(not isinstance(v, str) or not v.strip() for v in values):
             raise WorkerError("invalid_request")
         identity = profile_id(company.strip(), username.strip())
-        await self._drop_mfa_tab()
-        # keep_open: a TOTP challenge lives on in its tab until mfa() finishes it; login.js
-        # closes the tab itself in every other case.
-        res = await self._run(
-            "login",
-            {
-                "company": company.strip(),
-                "username": username.strip(),
-                "password": password,
-                "force": bool(force),
-            },
-            keep_open=True,
-        )
+        # keep_open: the tab that signs in keeps the login and stays (login.js closes it only
+        # when the login fails). A tab which vanished is replaced by a new one.
+        args = {
+            "company": company.strip(),
+            "username": username.strip(),
+            "password": password,
+            "force": bool(force),
+        }
+        had_tab = self._tab
+        try:
+            res = await self._run_login(args, had_tab)
+        except WorkerError:
+            await self._close_tab()
+            raise
         result = res.result if isinstance(res.result, dict) else {}
         if result.get("mfa_required"):
-            self._mfa_tab, self._mfa_started = res.page, time.monotonic()
+            self._mfa_started = time.monotonic()
         elif not result.get("authenticated"):
+            await self._close_tab()
             raise WorkerError("portal_changed")
+        else:
+            self._mfa_started = None
         self.profile = identity
         return {"profile_id": identity, **result}
+
+    async def _run_login(self, args: dict, had_tab: str | None):
+        try:
+            return await self._run("login", args, keep_open=True)
+        except WorkerError as err:
+            if err.code != "session_expired" or not had_tab or self._tab is not None:
+                raise
+        return await self._run("login", args, keep_open=True)
 
     async def mfa(self, code: str) -> dict:
         identity = self._path()
@@ -246,15 +289,15 @@ class BrowserDaemonClient:
             or time.monotonic() - started > MFA_WINDOW.total_seconds()
         ):
             raise WorkerError("invalid_code")
-        if not self._mfa_tab:
+        if not self._tab:
             raise WorkerError("session_expired")
         try:
-            await self._run("mfa", {"code": code}, tab=self._mfa_tab)
+            await self._run("mfa", {"code": code})
         except WorkerError as err:
             if err.code in {"session_expired", "browser_unavailable", "cannot_connect"}:
-                self._mfa_tab = self._mfa_started = None
+                self._mfa_started = None
             raise
-        self._mfa_tab = self._mfa_started = None
+        self._mfa_started = None
         return {"profile_id": identity, "authenticated": True}
 
     async def snapshot(self, options: dict) -> dict:
@@ -336,8 +379,8 @@ class BrowserDaemonClient:
     async def logout(self) -> dict:
         if not self.profile:
             return {"logged_out": True}
-        await self._drop_mfa_tab()
         await self._run("logout")
+        await self._close_tab()
         return {"logged_out": True}
 
     async def record(self, data: dict) -> dict:

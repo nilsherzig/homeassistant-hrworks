@@ -233,6 +233,9 @@ class FakeDaemon:
     async def find_profile(self, _name):
         return {"session_id": "s-1"}
 
+    async def tabs(self, node=None):
+        return []
+
 
 class RecoveryWithBrowserDaemonTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_session_logs_in_again_with_the_saved_login_and_totp(self):

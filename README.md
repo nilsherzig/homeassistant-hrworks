@@ -50,9 +50,12 @@ that has it.
 - Every operation (login, time account, leave and sickness lists, one day, snapshot,
   record) is one run with its own tab. Credentials and one-time codes travel in the
   run's `args` only; they are not part of the script and the daemon does not log them.
-- A login which waits for a TOTP code leaves its tab open (`keep_open`); the code is
-  entered in that tab and the tab is closed afterwards. An abandoned challenge expires
-  after 10 minutes; the next login closes its tab.
+- The portal session lives in the tab that signed in, so the integration keeps that one
+  tab (`keep_open`) and runs every later operation in it, like the SSH worker's persistent
+  page. A TOTP challenge is finished in the same tab; a failed login closes it, logout
+  closes it, and a tab which vanished counts as an expired session (the automatic recovery
+  then signs in again in a new tab). After a Home Assistant restart the profile's open
+  HR WORKS tab is taken over. An abandoned challenge expires after 10 minutes.
 - Working-time entries follow the same rules as with the SSH worker: previews by
   default, and a real write only with **Allow working-time submissions** enabled. A write
   which may have reached the portal (timeout, connection loss) is never replayed and

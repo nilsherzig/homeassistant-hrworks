@@ -46,6 +46,7 @@ class FakeDaemon:
         self.calls = []
         self.close_tab = AsyncMock()
         self.find_profile = AsyncMock(return_value={"name": "hrworks", "session_id": "s-1"})
+        self.tabs = AsyncMock(return_value=[])
 
     def on(self, operation, handler):
         self.handlers[operation] = handler
@@ -128,11 +129,90 @@ class LoginTests(unittest.IsolatedAsyncioTestCase):
             await self.client.mfa("123456")
         self.assertEqual(err.exception.code, "invalid_code")
 
-    async def test_a_new_login_closes_the_abandoned_challenge_tab(self):
+    async def test_a_new_login_reuses_the_portal_tab(self):
         self.daemon.on("login", ok({"mfa_required": True}, page="TAB1"))
         await self.client.login("example", "employee", PASSWORD)
         await self.client.login("example", "employee", PASSWORD, force=True)
+        self.assertEqual(self.daemon.calls[1][1]["tab"], "TAB1")
+        self.daemon.close_tab.assert_not_awaited()
+
+    async def test_the_tab_that_signed_in_serves_every_later_run(self):
+        self.daemon.on("login", ok({"authenticated": True}, page="TAB1"))
+        self.daemon.on("snapshot", ok(raw_snapshot(datetime.now(BERLIN).date())))
+        self.daemon.on("day", ok({"metrics": {}, "entries": []}))
+        self.daemon.on("account", ok({"metrics": {}, "period": None, "balance_basis": None}))
+        await self.client.login("example", "employee", PASSWORD)
+        await self.client.snapshot(ReadTests.options)
+        await self.client.day("2026-03-12")
+        await self.client.account()
+        for operation, call in self.daemon.calls[1:]:
+            self.assertEqual((call["tab"], call["keep_open"]), ("TAB1", True), operation)
+        self.daemon.close_tab.assert_not_awaited()
+        await self.client.close()  # the logged-in tab is the point: it stays
+        self.daemon.close_tab.assert_not_awaited()
+
+    async def test_a_failed_login_leaves_no_tab_behind(self):
+        self.daemon.on("login", failed("hrworks:invalid_auth"))
+        with self.assertRaises(WorkerError):
+            await self.client.login("example", "employee", PASSWORD)
+        self.assertIsNone(self.client._tab)
+
+    async def test_a_vanished_tab_expires_the_session_and_login_makes_a_new_one(self):
+        self.daemon.on("login", ok({"authenticated": True}, page="TAB1"))
+        await self.client.login("example", "employee", PASSWORD)
+        self.daemon.on("snapshot", failed("tab TAB1 not found in the session"))
+        with self.assertRaises(WorkerError) as err:
+            await self.client.snapshot(ReadTests.options)
+        self.assertEqual(err.exception.code, "session_expired")
+        self.assertIsNone(self.client._tab)
+        self.daemon.on("login", ok({"authenticated": True}, page="TAB2"))
+        await self.client.login("example", "employee", PASSWORD, force=True)
+        self.assertNotIn("tab", self.daemon.calls[-1][1])
+        self.assertEqual(self.client._tab, "TAB2")
+
+    async def test_login_replaces_a_stale_tab_itself(self):
+        self.daemon.on("login", ok({"authenticated": True}, page="TAB1"))
+        await self.client.login("example", "employee", PASSWORD)
+        answers = [
+            failed("tab TAB1 not found in the session"),
+            ok({"authenticated": True}, page="TAB2"),
+        ]
+
+        def login(_kwargs):
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer
+
+        self.daemon.on("login", login)
+        await self.client.login("example", "employee", PASSWORD, force=True)
+        self.assertEqual(self.client._tab, "TAB2")
+        self.assertEqual(len(answers), 0)
+
+    async def test_logout_closes_the_portal_tab(self):
+        self.daemon.on("login", ok({"authenticated": True}, page="TAB1"))
+        self.daemon.on("logout", ok({"logged_out": True}))
+        await self.client.login("example", "employee", PASSWORD)
+        await self.client.logout()
         self.daemon.close_tab.assert_awaited_once_with("TAB1")
+        self.assertIsNone(self.client._tab)
+
+    async def test_after_a_restart_the_profiles_portal_tab_is_taken_over(self):
+        self.daemon.tabs = AsyncMock(
+            return_value=[
+                {"id": "X", "sessionId": "s-1", "type": "page", "url": "https://example.org/"},
+                {
+                    "id": "P",
+                    "sessionId": "s-1",
+                    "type": "page",
+                    "url": "https://ssl6.hrworks.de/o/x",
+                },
+            ]
+        )
+        self.daemon.on("day", ok({"metrics": {}, "entries": []}))
+        client = make(self.daemon)
+        await client.day("2026-03-12")
+        self.assertEqual(self.daemon.calls[0][1]["tab"], "P")
 
     async def test_a_vanished_tab_means_the_login_must_restart(self):
         self.daemon.on("login", ok({"mfa_required": True}, page="TAB1"))
