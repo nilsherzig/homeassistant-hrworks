@@ -2,12 +2,17 @@
 
 import sys
 import unittest
+from datetime import timedelta
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from browser_daemon_client import RunError, RunResult
 
 from custom_components.hrworks import api, config_flow
 from custom_components.hrworks.api import WorkerError, create_client
 from custom_components.hrworks.config_flow import HrworksConfigFlow
+from custom_components.hrworks.coordinator import HrworksCoordinator
+from custom_components.hrworks.hrworks.browser_daemon import BrowserDaemonClient, script
 
 SSH = {
     "ssh_host": "host",
@@ -188,6 +193,89 @@ class CreateClientTests(unittest.TestCase):
         with patcher, self.assertRaises(WorkerError) as err:
             create_client(MagicMock(), self.settings())
         self.assertEqual(err.exception.code, "cannot_connect")
+
+
+class FakeDaemon:
+    """Answers runs by operation: snapshots first fail as expired, then succeed."""
+
+    def __init__(self):
+        self.operations = []
+        self.snapshots = 0
+        self.args = {}
+
+    async def run(self, **kwargs):
+        from custom_components.hrworks.hrworks import browser_daemon
+
+        operation = next(n for n in browser_daemon.OPERATIONS if script(n) == kwargs["script"])
+        self.operations.append(operation)
+        self.args[operation] = kwargs["args"]
+        if operation == "snapshot":
+            self.snapshots += 1
+            if self.snapshots == 1:
+                raise RunError(RunResult(ok=False, error="hrworks:session_expired"), 422)
+            return RunResult(
+                ok=True,
+                result={
+                    "account": {"metrics": {}, "period": None, "balance_basis": None},
+                    "lists": [],
+                    "today": {"metrics": {}, "entries": []},
+                    "clock": None,
+                    "timings": {},
+                },
+            )
+        if operation == "login":
+            return RunResult(ok=True, result={"mfa_required": True}, page="TAB")
+        return RunResult(ok=True, result={"authenticated": True})
+
+    async def close_tab(self, _tab):
+        pass
+
+    async def find_profile(self, _name):
+        return {"session_id": "s-1"}
+
+
+class RecoveryWithBrowserDaemonTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_session_logs_in_again_with_the_saved_login_and_totp(self):
+        data = {**ACCOUNT, "backend": "browser_daemon", "browser_daemon_profile": "hrworks"}
+        daemon = FakeDaemon()
+        client = BrowserDaemonClient(data, daemon=daemon)
+        coordinator = object.__new__(HrworksCoordinator)
+        coordinator.entry = SimpleNamespace(entry_id="e", options={}, data=data)
+        coordinator.client = client
+        coordinator.hass = MagicMock()
+        coordinator.hass.data = {}
+        coordinator.last_error = coordinator.last_error_stage = coordinator.last_error_detail = None
+        coordinator._auth_recovery_blocked = False
+        coordinator._normal_update_interval = timedelta(minutes=15)
+        coordinator.update_interval = coordinator._normal_update_interval
+        coordinator._work_days = AsyncMock(return_value=[])
+        coordinator.update_count = coordinator.failed_updates = 0
+        coordinator.consecutive_failures = coordinator.reauthentications = 0
+        coordinator.last_duration = coordinator.last_finished = None
+        with patch("custom_components.hrworks.coordinator.clear_issues"):
+            result = await coordinator._async_update_data()
+        self.assertEqual(daemon.operations, ["snapshot", "login", "mfa", "snapshot"])
+        self.assertEqual(daemon.args["login"]["password"], "test-password")
+        self.assertTrue(daemon.args["login"]["force"])
+        self.assertRegex(daemon.args["mfa"]["code"], r"^\d{6}$")
+        self.assertEqual(coordinator.reauthentications, 1)
+        self.assertEqual(result["work_days"], [])
+        self.assertEqual(result["diagnostics"]["backend"], "browser-daemon")
+
+    async def test_login_timeout_keeps_its_stage_for_diagnostics(self):
+        daemon = FakeDaemon()
+
+        async def run(**_kwargs):
+            raise RunError(RunResult(ok=False, error="hrworks:login_timeout"), 422)
+
+        daemon.run = run
+        client = BrowserDaemonClient({**ACCOUNT, "backend": "browser_daemon"}, daemon=daemon)
+        with self.assertRaises(WorkerError) as err:
+            await client.login("example", "employee", "pw")
+        self.assertEqual(
+            (err.exception.code, err.exception.stage, err.exception.detail),
+            ("login_timeout", "browser_operation", "timeout"),
+        )
 
 
 if __name__ == "__main__":

@@ -75,26 +75,35 @@ def profile_id(company: str, username: str) -> str:
     return hashlib.sha256(f"{company.casefold()}:{username.casefold()}".encode()).hexdigest()
 
 
-def _failure(err: Exception) -> tuple[str, bool]:
-    """A fixed error code, and whether the run may already have reached the portal."""
+def _failure(err: Exception) -> tuple[str, bool, str | None, str | None]:
+    """A fixed error code, whether the run may already have reached the portal, and the
+    failure stage and detail for diagnostics (fixed vocabulary, never the error text)."""
     if isinstance(err, RunTimeout):
-        return "browser_unavailable", True
+        return "browser_unavailable", True, "browser_operation", "timeout"
     if isinstance(err, RunError):
         message = err.run.error or ""
         if match := ERROR_CODE.search(message):
             code = match[1] if match[1] in ERRORS else "portal_changed"
-            return code, False
+            if code == "login_timeout":
+                return code, False, "browser_operation", "timeout"
+            return code, False, None, None
         if "not found in the session" in message:  # the tab of a pending login is gone
-            return "session_expired", False
+            return "session_expired", False, None, None
         if message.startswith(SCRIPT_BUGS):
-            return "portal_changed", True
-        return "browser_unavailable", True
+            return "portal_changed", True, None, None
+        detail = "timeout" if "Timeout" in message else None
+        return "browser_unavailable", True, "browser_operation", detail
     status = getattr(err, "status", None)
     if status in REFUSED:
-        return REFUSED[status], False
+        detail = f"http_{status}" if status in {401, 403} else None
+        return REFUSED[status], False, "browser_connect", detail
     if status == 501:
-        return "incompatible_worker", False
-    return ("browser_unavailable" if status else "cannot_connect"), True
+        return "incompatible_worker", False, "browser_connect", None
+    if status is None:
+        detail = "timeout" if isinstance(err.__cause__, TimeoutError) else "connection_failed"
+        return "cannot_connect", True, "browser_connect", detail
+    detail = "http_429" if status == 429 else "http_5xx" if status >= 500 else None
+    return "browser_unavailable", True, "browser_connect", detail
 
 
 class BrowserDaemonClient:
@@ -177,8 +186,10 @@ class BrowserDaemonClient:
                     **options,
                 )
             except (BrowserDaemonError, aiohttp.ClientError, TimeoutError) as err:
-                code, uncertain = _failure(err)
-                raise WorkerError("write_uncertain" if write and uncertain else code) from None
+                code, uncertain, stage, detail = _failure(err)
+                raise WorkerError(
+                    "write_uncertain" if write and uncertain else code, stage=stage, detail=detail
+                ) from None
         return res
 
     def _path(self) -> str:

@@ -171,7 +171,7 @@ async function login(page, context, { company, username, password, force }) {
   try {
     await page.waitForFunction("location.pathname !== '/'", undefined, { timeout: 15000 });
   } catch (err) {
-    if (isTimeout(err)) throw new PortalError('invalid_auth');
+    if (isTimeout(err)) throw new PortalError('login_timeout');
     throw err;
   }
   if (page.url().includes('2fa-selection')) {
