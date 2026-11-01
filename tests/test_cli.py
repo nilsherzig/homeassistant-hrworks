@@ -9,10 +9,10 @@ import sys
 import tempfile
 import unittest
 from datetime import date
-from importlib.metadata import version
 from pathlib import Path
 from unittest.mock import patch
 
+import hrworks
 from hrworks.browser_daemon import profile_id
 from hrworks.cli import normalize_globals
 from hrworks.config import ConfigStore
@@ -62,7 +62,7 @@ class CliTests(unittest.TestCase):
         for args in [("--json", "--version"), ("--version", "--json")]:
             result = self.cli(*args)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(json.loads(result.stdout)["version"], version("hrworks-employee"))
+            self.assertEqual(json.loads(result.stdout)["version"], hrworks.__version__)
         self.assertEqual(
             normalize_globals(
                 ["times", "record", "--comment", "--json", "--start", "08:00", "--json"]
