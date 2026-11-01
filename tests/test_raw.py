@@ -25,6 +25,18 @@ class RawRequestTests(unittest.TestCase):
         self.assertNotIn("2026-11-03", request["prompt"])
         self.assertIn("2026-11-02  13:22  17:42  doc apptment", request["prompt"])
 
+    def test_continuation_rows_inherit_the_date(self):
+        request = raw_request(
+            "DATE START END TIME TOTAL COMMENT\n"
+            "2026-10-26  07:03:04  12:12:21  5:09:17\n"
+            "            13:03:08  16:31:50  3:28:42  8:37:59\n"
+            "DATE START END TIME TOTAL COMMENT\n"
+        )
+        self.assertEqual(
+            [(r["date"], r["start"], r["end"]) for r in request["rows"]],
+            [("2026-10-26", "07:03", "12:12"), ("2026-10-26", "13:03", "16:31")],
+        )
+
     def test_free_text_is_sent_unchanged_without_expectations(self):
         request = raw_request("I worked from 4 p.m. to 5 p.m. today.\n")
         self.assertEqual(request, {"prompt": "I worked from 4 p.m. to 5 p.m. today.", "rows": []})

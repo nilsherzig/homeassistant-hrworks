@@ -520,6 +520,17 @@ def _assist(rt: Runtime, request: dict, *, save: bool, yes: bool):
                 await rt.sign_in(client, await asyncio.to_thread(credentials, rt.settings))
                 proposal = await preview()
             entries = proposal["entries"]
+            booked = {
+                day: (await client.day(day))["entries"]
+                for day in sorted({e["date"] for e in entries})
+            }
+            for entry in entries:
+                # The portal's own wording for existing rows is not relied upon.
+                entry["exists"] = entry["exists"] or any(
+                    entry["start"] < (old.get("end") or "99:99")
+                    and entry["end"] > (old.get("start") or "")
+                    for old in booked[entry["date"]]
+                )
             if not save:
                 return {"dry_run": True, "entries": entries}
             if any(entry.get("exists") for entry in entries):

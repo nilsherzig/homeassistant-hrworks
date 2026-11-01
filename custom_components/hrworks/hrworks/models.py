@@ -16,7 +16,7 @@ TYPE_LABELS = {
 }
 TYPES = tuple(TYPE_LABELS)
 RAW_ROW = re.compile(
-    r"^\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(\d{1,2}:\d{2}(?::\d{2})?|N/A)\b\s*(?:\d+:\d{2}(?::\d{2})?(?:\s+|$))*(.*)$"
+    r"^\s*(\d{4}-\d{2}-\d{2})?\s*(\d{1,2}:\d{2}(?::\d{2})?)\s+(\d{1,2}:\d{2}(?::\d{2})?|N/A)\b\s*(?:\d+:\d{2}(?::\d{2})?(?:\s+|$))*(.*)$"
 )
 DOCTOR = re.compile(r"doc(tor)?(['’]s)?\s+app(oin)?t?ment|dr\.?\s+appointment|arzt", re.IGNORECASE)
 RAW_INSTRUCTIONS = (
@@ -167,15 +167,20 @@ def raw_request(text: str) -> dict:
     """The AI-assistance prompt and expected rows for a pasted time table.
 
     Rows with the ``DATE START END ...`` shape become separate intervals whose date is
-    repeated on every row; an unfinished row (``END`` of ``N/A``) is dropped. Text without
+    repeated on every row (continuation rows inherit the date above); an unfinished row (``END`` of ``N/A``) is dropped. Text without
     such rows is sent unchanged and nothing is verified against it.
     """
     rows = []
+    last_day = None
     for line in text.splitlines():
         match = RAW_ROW.match(line)
         if not match:
             continue
         day, start, end, comment = match.groups()
+        # Continuation rows of a split day leave the date blank.
+        day = last_day = day or last_day
+        if day is None:
+            continue
         if end == "N/A":
             continue
         start, end = (":".join(value.split(":")[:2]).zfill(5) for value in (start, end))
