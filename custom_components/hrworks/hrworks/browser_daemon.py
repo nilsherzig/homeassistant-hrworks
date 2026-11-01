@@ -38,10 +38,19 @@ OPERATIONS = (
     "day",
     "account",
     "record",
+    "assist",
     "logout",
 )
 # Seconds a run may take, per operation .
-TIMEOUTS = {"snapshot": 170, "record": 150, "login": 90, "day": 90, "account": 90, "mfa": 60}
+TIMEOUTS = {
+    "snapshot": 170,
+    "record": 150,
+    "assist": 170,
+    "login": 90,
+    "day": 90,
+    "account": 90,
+    "mfa": 60,
+}
 ERROR_CODE = re.compile(r"hrworks:([a-z_]+)")
 SCRIPT_BUGS = ("TypeError", "ReferenceError", "SyntaxError", "RangeError")
 # Rejections of the request itself: the run never started, so a write cannot have happened.
@@ -394,6 +403,46 @@ class BrowserDaemonClient:
         if not isinstance(res.result, dict):
             raise WorkerError("write_uncertain" if not dry_run else "portal_changed")
         return res.result
+
+    async def assist(self, data: dict) -> dict:
+        """Preview or save the rows the portal's AI assistance proposes for a prompt."""
+        self._path()
+        dry_run = data.get("dry_run", True)
+        prompt, rows = data.get("prompt"), data.get("rows", [])
+        if (
+            type(dry_run) is not bool
+            or not isinstance(prompt, str)
+            or not prompt.strip()
+            or len(prompt) > 20000
+            or not isinstance(rows, list)
+        ):
+            raise WorkerError("invalid_request")
+        if not dry_run and not self.allow_writes:
+            raise WorkerError("writes_disabled")
+        args = {"prompt": prompt, "rows": [assist_row(row) for row in rows], "dry_run": dry_run}
+        res = await self._run("assist", args, write=not dry_run)
+        if not isinstance(res.result, dict):
+            raise WorkerError("write_uncertain" if not dry_run else "portal_changed")
+        return res.result
+
+
+def assist_row(row: dict) -> dict:
+    """One expected AI-assistance row, as arguments for assist.js."""
+    try:
+        date.fromisoformat(row["date"])
+        for field in ("start", "end"):
+            datetime.strptime(row[field], "%H:%M")
+        kind = row.get("type", "working_time")
+        if kind not in TYPE_LABELS:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise WorkerError("invalid_request") from None
+    return {
+        "date": row["date"],
+        "start": row["start"],
+        "end": row["end"],
+        "labels": list(TYPE_LABELS[kind]),
+    }
 
 
 def account_result(raw: dict, today: date) -> tuple[dict, dict]:

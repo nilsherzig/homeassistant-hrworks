@@ -26,7 +26,7 @@ from .browser_daemon import BrowserDaemonClient
 from .cache import CachedReads, ReadCache
 from .config import LEGACY_KEYS, ConfigStore, cluster_secret, credentials, redacted
 from .errors import WorkerError
-from .models import TYPE_LABELS, calendar_ics, duration, import_csv, interval
+from .models import TYPE_LABELS, calendar_ics, duration, import_csv, interval, raw_request
 from .output import emit
 from .totp import InvalidTotp, parameters
 
@@ -81,6 +81,7 @@ ERROR_MESSAGES = {
     "invalid_import": "CSV requires date,start,end and optional type,comment columns.",
     "unfinished_interval": "The import contains an unfinished interval. Remove it before importing.",
     "overlap": "An interval overlaps an existing or imported interval. Nothing will replace it.",
+    "proposal_mismatch": "The AI assistant did not propose exactly the rows you gave it. Nothing was saved; rephrase or use `times import`.",
     "writes_disabled": "Writes are disabled. Run `hrworks config init --enable-writes` before saving.",
     "write_uncertain": "Submission status is uncertain. Review the day in HR WORKS before retrying.",
     "invalid_range": "Dates must be ISO dates in order, within 730 days of today.",
@@ -442,8 +443,19 @@ def times_list(
 @times_app.command("record")
 def record(
     ctx: typer.Context,
-    start: Annotated[str, typer.Option(help="HH:MM or ISO timestamp including offset.")],
-    end: Annotated[str, typer.Option(help="HH:MM or ISO timestamp including offset.")],
+    start: Annotated[
+        str | None, typer.Option(help="HH:MM or ISO timestamp including offset.")
+    ] = None,
+    end: Annotated[
+        str | None, typer.Option(help="HH:MM or ISO timestamp including offset.")
+    ] = None,
+    raw: Annotated[
+        bool,
+        typer.Option(
+            help="Read a time table (DATE START END [COMMENT] rows) or free text from stdin "
+            "and let HR WORKS' AI assistance propose the entries."
+        ),
+    ] = False,
     day: Annotated[str, typer.Option("--date")] = date.today().isoformat(),
     kind: Annotated[
         str,
@@ -460,6 +472,18 @@ def record(
 ):
     """Preview a completed interval. Saving requires explicit --save."""
     rt = runtime(ctx)
+    if raw:
+        if start or end or comment:
+            raise typer.BadParameter("--raw cannot be combined with --start, --end or --comment.")
+        if sys.stdin.isatty():
+            raise typer.BadParameter("--raw reads the time table from stdin.")
+        try:
+            request = raw_request(sys.stdin.read())
+        except ValueError:
+            raise WorkerError("invalid_request") from None
+        return _assist(rt, request, save=save, yes=yes)
+    if not start or not end:
+        raise typer.BadParameter("--start and --end are required unless --raw is given.")
     data = interval(day, start, end, kind=kind, comment=comment, timezone=rt.settings["timezone"])
     _submit(rt, [data], save=save, yes=yes)
 
@@ -477,6 +501,94 @@ def times_import(
     rt = runtime(ctx)
     data = import_csv(file.read_text(encoding="utf-8-sig"), timezone=rt.settings["timezone"])
     _submit(rt, data, save=save, yes=yes)
+
+
+def _assist(rt: Runtime, request: dict, *, save: bool, yes: bool):
+    """Preview what the AI assistance proposes; with --save, enter exactly that proposal."""
+
+    async def operation():
+        async with rt.client(rt.settings) as client:
+
+            async def preview():
+                return await client.assist({**request, "dry_run": True})
+
+            try:
+                proposal = await preview()
+            except WorkerError as error:
+                if error.code not in {"session_expired", "mfa_required"}:
+                    raise
+                await rt.sign_in(client, await asyncio.to_thread(credentials, rt.settings))
+                proposal = await preview()
+            entries = proposal["entries"]
+            if not save:
+                return {"dry_run": True, "entries": entries}
+            if any(entry.get("exists") for entry in entries):
+                raise WorkerError("overlap")
+            if not yes:
+                if (
+                    rt.as_json
+                    or rt.non_interactive
+                    or (not sys.stdin.isatty() or not sys.stdout.isatty())
+                ):
+                    raise WorkerError("confirmation_required")
+                emit(entries, no_color=rt.no_color)
+                if not Confirm.ask(
+                    "Save these intervals in HR WORKS?", default=False, console=Console(stderr=True)
+                ):
+                    return {"cancelled": True, "entries": entries}
+            if not (await client.health()).get("writes_enabled"):
+                raise WorkerError("writes_disabled")
+            # Enter what was previewed, not whatever a second AI run would propose.
+            expected = [{**entry, "type": type_key(entry["type"])} for entry in entries]
+            days = sorted({entry["date"] for entry in entries})
+            cache = rt.cache()
+            try:
+                for day in days:
+                    cache.invalidate(day)
+                try:
+                    result = await client.assist(
+                        {"prompt": request["prompt"], "rows": expected, "dry_run": False}
+                    )
+                except BaseException:
+                    with suppress(WorkerError):
+                        for day in days:
+                            cache.invalidate(day)
+                    raise
+                for day in days:
+                    cache.invalidate(day)
+            except WorkerError as error:
+                return {
+                    "complete": False,
+                    "saved_count": 0,
+                    "results": [],
+                    "failed_index": 0,
+                    "error": {
+                        "code": error.code,
+                        "message": ERROR_MESSAGES.get(error.code, error.code),
+                    },
+                }
+            return {"complete": True, "entries": result["entries"]}
+
+    result = asyncio.run(operation())
+    rows = result.get("entries", result.get("results"))
+    if result.get("complete") is False:
+        rows = [
+            {
+                "error": result["error"]["code"],
+                "message": result["error"]["message"],
+            }
+        ]
+    rt.output(result, rows=rows)
+    if result.get("complete") is False:
+        raise typer.Exit(4 if result["error"]["code"] == "write_uncertain" else 1)
+
+
+def type_key(label: str) -> str:
+    """The type key whose portal label (any language) is ``label``."""
+    for key, labels in TYPE_LABELS.items():
+        if label.strip().casefold() in {item.casefold() for item in labels}:
+            return key
+    raise WorkerError("invalid_request")
 
 
 def _submit(rt: Runtime, entries: list[dict], *, save: bool, yes: bool):

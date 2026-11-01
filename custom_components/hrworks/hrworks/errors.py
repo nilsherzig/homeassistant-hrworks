@@ -13,6 +13,7 @@ ERRORS = {
     "browser_unavailable",
     "writes_disabled",
     "overlap",
+    "proposal_mismatch",
     "invalid_interval",
     "write_uncertain",
     "not_found",

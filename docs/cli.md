@@ -91,6 +91,7 @@ hrworks calendar list --kind leave --json
 | `times list --month YYYY-MM` | Read every day of a month |
 | `times types` | List supported working-time type keys |
 | `times record --date ... --start ... --end ...` | Preview a completed interval |
+| `times record --raw < table.txt` | Preview what HR WORKS' AI assistance proposes for a pasted time table |
 | `times import FILE.csv` | Validate and preview every separate CSV interval |
 | `calendar list [--from ... --to ... --kind ... --pending]` | Leave and sickness events |
 | `calendar export FILE.ics` | Export leave/sickness as all-day iCalendar events |
@@ -126,6 +127,23 @@ Ambiguous/nonexistent DST wall times require explicit offsets. Seconds are
 rejected rather than rounded. Future, unfinished, cross-day and overlapping
 intervals are rejected. Existing entries are never overwritten. Exact duplicates
 return `already_exists` and are not submitted again.
+
+### AI assistance (`--raw`)
+
+`times record --raw` reads a time table or free text from stdin and sends it to the portal's
+"AI assistance" dialog, like typing it there by hand:
+
+```bash
+hrworks times record --raw <<< "$(tw::summary week)"               # preview only
+hrworks times record --raw --save <<< "$(tw::summary week)"        # confirm, then save
+```
+
+Rows shaped `DATE START END [TIME TOTAL] [COMMENT]` stay separate intervals (lunch breaks are
+never merged), seconds are dropped, unfinished rows (`END` of `N/A`) are skipped and rows whose
+comment names a doctor's appointment get that type. The proposal must match the rows exactly,
+or nothing is saved (`proposal_mismatch`). With `--save` the previewed proposal is what gets
+entered and then verified on the portal; a row the portal reports as existing aborts the save.
+Free text is previewed as proposed, with nothing to compare against.
 
 CSV import uses `date,start,end` and optional `type,comment` columns:
 

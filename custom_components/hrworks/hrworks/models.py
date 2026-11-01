@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,15 @@ TYPE_LABELS = {
     "education_and_training": ("Education and Training", "Fortbildung"),
 }
 TYPES = tuple(TYPE_LABELS)
+RAW_ROW = re.compile(
+    r"^\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)\s+(\d{1,2}:\d{2}(?::\d{2})?|N/A)\b\s*(?:\d+:\d{2}(?::\d{2})?(?:\s+|$))*(.*)$"
+)
+DOCTOR = re.compile(r"doc(tor)?(['’]s)?\s+app(oin)?t?ment|dr\.?\s+appointment|arzt", re.IGNORECASE)
+RAW_INSTRUCTIONS = (
+    "Enter my working time. The header row is:\n{header}\n\n"
+    "Each data row is a separate working-time recording. Do not merge rows and do not count "
+    "the lunch break as working time."
+)
 
 
 def duration(minutes: int | float | None) -> str:
@@ -151,3 +161,52 @@ def calendar_ics(events: list[dict]) -> str:
             current += character
         folded.append(current)
     return "\r\n".join(folded) + "\r\n"
+
+
+def raw_request(text: str) -> dict:
+    """The AI-assistance prompt and expected rows for a pasted time table.
+
+    Rows with the ``DATE START END ...`` shape become separate intervals whose date is
+    repeated on every row; an unfinished row (``END`` of ``N/A``) is dropped. Text without
+    such rows is sent unchanged and nothing is verified against it.
+    """
+    rows = []
+    for line in text.splitlines():
+        match = RAW_ROW.match(line)
+        if not match:
+            continue
+        day, start, end, comment = match.groups()
+        if end == "N/A":
+            continue
+        start, end = (":".join(value.split(":")[:2]).zfill(5) for value in (start, end))
+        rows.append(
+            {
+                "date": day,
+                "start": start,
+                "end": end,
+                "type": "doctors_appointment" if DOCTOR.search(comment) else "working_time",
+                "comment": comment.strip(),
+            }
+        )
+    if not rows:
+        stripped = text.strip()
+        if not stripped:
+            raise ValueError("invalid_request")
+        return {"prompt": stripped, "rows": []}
+    header = "DATE START END COMMENT"
+    prompt = RAW_INSTRUCTIONS.format(header=header)
+    if any(row["type"] == "doctors_appointment" for row in rows):
+        prompt += (
+            ' Rows whose comment identifies a doctor visit are "Doctor\'s appointment" entries;'
+            " keep their date and start/end times."
+        )
+    prompt += (
+        "\n\n"
+        + header
+        + "\n"
+        + "\n".join(
+            f"{row['date']}  {row['start']}  {row['end']}  {row['comment']}".rstrip()
+            for row in rows
+        )
+    )
+    return {"prompt": prompt, "rows": rows}
