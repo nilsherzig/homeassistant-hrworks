@@ -56,9 +56,16 @@ Runs for a profile go to the node that has it.
 - **Day history** reads open the page again for every day, so they are slower than a
   single snapshot.
 
+## Command-line tool
+
+`hrworks` / `hr-works` reads the same data from a terminal through browser-daemon
+(`balance`, `status`, `snapshot`, `times list`, `times record` previews, `calendar list`,
+...). See the [CLI guide](docs/cli.md) and the [library notes](docs/python.md). With Nix:
+`programs.hrworks.enable = true` (import `nixosModules.cli`, or `nixosModules.default`).
+
 ## Upgrading from version 8 (SSH worker)
 
-Version 9 removes the SSH worker, the `hrworks` CLI and the NixOS module. Entries which
+Version 9 removes the SSH worker and its NixOS module (the `hrworks` CLI stays and now uses browser-daemon; its old transport options are ignored). Entries which
 already used browser-daemon migrate by themselves (the old SSH keys are dropped from
 the entry). An entry which still used the SSH worker keeps its employee login but fails
 to load with a Repairs notice: open the integration, choose **Reconfigure** and enter
@@ -215,4 +222,5 @@ python -m unittest discover -s tests/ha -v
 
 ## Changelog
 
-- **9.0.0:** the SSH worker, the `hrworks` CLI and the NixOS module are removed; browser-daemon is the only backend (config entry version 2).
+- **9.1.0:** the `hrworks` CLI is back, on browser-daemon: no `worker` command, no transport options; `programs.hrworks` as before.
+- **9.0.0:** the SSH worker and `programs.hrworksWorker` are removed; browser-daemon is the only backend (config entry version 2).

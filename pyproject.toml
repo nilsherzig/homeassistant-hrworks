@@ -1,4 +1,21 @@
-# Tooling only: the integration is installed by Home Assistant (custom_components/hrworks).
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hrworks-employee"
+version = "9.1.0"
+description = "HR WORKS employee library and Rich CLI on browser-daemon"
+requires-python = ">=3.12"
+dependencies = ["browser-daemon-client==0.1.0", "rich>=13.9", "typer>=0.16"]
+license = "MIT"
+
+[project.scripts]
+hrworks = "hrworks.cli:main"
+hr-works = "hrworks.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["custom_components/hrworks/hrworks"]
 
 [tool.ruff]
 target-version = "py312"
