@@ -121,6 +121,9 @@ class HrworksCoordinator(DataUpdateCoordinator[dict]):
             self.consecutive_failures += 1
             raise
         finally:
+            # Do not keep the browser open between polls: "remember me" (or the saved TOTP)
+            # restores the login on the next one.
+            await self.client.end_session()
             self.last_duration = round(time.monotonic() - started, 2)
             self.last_finished = dt_util.utcnow()
 

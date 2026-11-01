@@ -160,7 +160,7 @@ class BrowserDaemonClient:
 
     async def close(self) -> None:
         self.capabilities = None
-        # The portal tab stays open on purpose: it holds the login.
+        # The browser session is ended by end_session() after each refresh.
         if self._owns_http and self._http is not None:
             await self._http.close()
             self._http = self._daemon = None
@@ -171,6 +171,24 @@ class BrowserDaemonClient:
 
     async def __aexit__(self, *_exc):
         await self.close()
+
+    async def end_session(self) -> None:
+        """Stop the profile's browser; the saved profile keeps the "remember me" login.
+
+        Skipped while an MFA code is awaited (the tab holds the pending login). Never raises.
+        """
+        if not self.browser_profile or self._mfa_started is not None:
+            return
+        async with self._lock:
+            self._tab = None
+            try:
+                client = self._client()
+                found = await client.find_profile(self.browser_profile)
+                session = (found or {}).get("session_id")
+                if session:
+                    await client.delete_session(session, node=(found or {}).get("node_name"))
+            except (BrowserDaemonError, aiohttp.ClientError, TimeoutError, WorkerError):
+                pass
 
     async def _close_tab(self) -> None:
         tab, self._tab, self._mfa_started = self._tab, None, None
