@@ -142,6 +142,7 @@ class AuthenticationTests(unittest.IsolatedAsyncioTestCase):
             snapshot=AsyncMock(),
             login=AsyncMock(return_value={"mfa_required": True}),
             mfa=AsyncMock(),
+            end_session=AsyncMock(),
         )
         coordinator.hass = MagicMock()
         coordinator.hass.data = {}

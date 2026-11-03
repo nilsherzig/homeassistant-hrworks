@@ -242,6 +242,9 @@ class FakeDaemon:
     async def close_tab(self, _tab):
         pass
 
+    async def delete_session(self, _session, node=None):
+        pass
+
     async def find_profile(self, _name):
         return {"session_id": "s-1"}
 
